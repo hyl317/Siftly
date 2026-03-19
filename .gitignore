@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+.DS_Store
+.thumbnails/
+.video_paths.json
+.prep/
