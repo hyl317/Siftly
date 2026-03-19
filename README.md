@@ -316,4 +316,4 @@ Siftly/
 
 ## 许可证
 
-MIT
+[PolyForm Noncommercial 1.0.0](LICENSE) — 个人和非商业用途免费使用。商业授权请联系作者。
