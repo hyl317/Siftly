@@ -8,7 +8,7 @@
 
 A desktop app for AI-powered video highlight discovery and DaVinci Resolve integration, built on the [Twelve Labs](https://www.twelvelabs.io/) video understanding platform.
 
-Siftly lets you upload videos, search them with natural language, auto-detect highlights, and export curated timelines directly into DaVinci Resolve — no manual clip relinking required.
+Siftly lets you upload videos, search them with natural language, auto-detect highlights, and create ready-to-edit DaVinci Resolve projects — complete with media pool, timeline, and project settings — so you can start editing immediately.
 
 ## Features
 
@@ -167,7 +167,7 @@ Siftly/
 
 一款基于 [Twelve Labs](https://www.twelvelabs.io/) 视频理解平台的桌面应用，用于 AI 驱动的视频精彩片段发现与 DaVinci Resolve 集成。
 
-Siftly 支持上传视频、自然语言搜索、自动发现精彩片段，并将精选时间线直接导出到 DaVinci Resolve——无需手动重新链接素材。
+Siftly 支持上传视频、自然语言搜索、自动发现精彩片段，并一键创建可直接编辑的 DaVinci Resolve 项目——媒体池、时间线、项目设置一步到位，打开即可开始剪辑。
 
 ## 功能
 
