@@ -2,8 +2,8 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QLabel, QMainWindow, QPushButton, QSplitter,
-    QStackedWidget, QVBoxLayout, QWidget,
+    QComboBox, QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMessageBox,
+    QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from app.config import get_api_key, get_index_id, set_index_id
@@ -16,6 +16,9 @@ from app.views.search_view import SearchView
 from app.views.highlights_view import HighlightsView
 from app.views.settings_dialog import SettingsDialog
 from app import video_map
+
+
+_CREATE_NEW_SENTINEL = "__create_new__"
 
 
 class _LoadIndexesWorker(QThread):
@@ -31,6 +34,36 @@ class _LoadIndexesWorker(QThread):
             ])
         except Exception:
             self.result.emit([])
+
+
+class _CreateIndexWorker(QThread):
+    result = Signal(str, str)  # id, name
+    error = Signal(str)
+
+    def __init__(self, name: str, parent=None):
+        super().__init__(parent)
+        self.index_name = name
+
+    def run(self):
+        try:
+            from twelvelabs.indexes import IndexesCreateRequestModelsItem
+            client = get_client()
+            index = client.indexes.create(
+                index_name=self.index_name,
+                models=[
+                    IndexesCreateRequestModelsItem(
+                        model_name="marengo3.0",
+                        model_options=["visual", "audio"],
+                    ),
+                    IndexesCreateRequestModelsItem(
+                        model_name="pegasus1.2",
+                        model_options=["visual", "audio"],
+                    ),
+                ],
+            )
+            self.result.emit(index.id, self.index_name)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class MainWindow(QMainWindow):
@@ -173,6 +206,7 @@ class MainWindow(QMainWindow):
             )
             if idx["id"] == current_id:
                 select_idx = i
+        self.index_combo.addItem("+ Create New Index", _CREATE_NEW_SENTINEL)
         if indexes:
             self.index_combo.setCurrentIndex(select_idx)
         self._index_loading = False
@@ -181,10 +215,42 @@ class MainWindow(QMainWindow):
         if self._index_loading or idx < 0:
             return
         index_id = self.index_combo.currentData()
+        if index_id == _CREATE_NEW_SENTINEL:
+            self._create_new_index()
+            return
         if index_id and index_id != get_index_id():
             set_index_id(index_id)
             self.gallery_view.refresh()
             self.highlights_view._refresh_scope()
+
+    def _create_new_index(self):
+        # Revert combo to previous index while dialog is open
+        self._index_loading = True
+        current_id = get_index_id()
+        for i in range(self.index_combo.count()):
+            if self.index_combo.itemData(i) == current_id:
+                self.index_combo.setCurrentIndex(i)
+                break
+        self._index_loading = False
+
+        name, ok = QInputDialog.getText(self, "Create New Index", "Index name:")
+        if not ok or not name.strip():
+            return
+        self.index_combo.setEnabled(False)
+        worker = _CreateIndexWorker(name.strip(), self)
+        worker.result.connect(self._on_index_created)
+        worker.error.connect(self._on_create_index_error)
+        self._workers.append(worker)
+        worker.start()
+
+    def _on_index_created(self, index_id: str, name: str):
+        self.index_combo.setEnabled(True)
+        set_index_id(index_id)
+        self._refresh_indexes()
+
+    def _on_create_index_error(self, msg: str):
+        self.index_combo.setEnabled(True)
+        QMessageBox.warning(self, "Error", f"Failed to create index:\n{msg}")
 
     def _navigate(self, key: str):
         for k, btn in self.nav_buttons.items():

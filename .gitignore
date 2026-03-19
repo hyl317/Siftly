@@ -5,3 +5,4 @@ __pycache__/
 .thumbnails/
 .video_paths.json
 .prep/
+.claude/

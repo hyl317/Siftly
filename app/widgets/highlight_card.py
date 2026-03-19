@@ -1,10 +1,11 @@
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QLabel, QVBoxLayout
 
 from app.config import PROJECT_ROOT
+from app.utils.thumbnails import extract_thumbnail
 from app import video_map
 
 THUMB_DIR = PROJECT_ROOT / ".thumbnails"
@@ -21,6 +22,21 @@ CATEGORY_COLORS = {
     "travel": "#3498db",
     "other": "#7f8c8d",
 }
+
+
+class _ThumbWorker(QThread):
+    ready = Signal(str)  # path to extracted thumbnail
+
+    def __init__(self, video_path: str, output_path: Path, time_sec: float, parent=None):
+        super().__init__(parent)
+        self._video_path = video_path
+        self._output_path = output_path
+        self._time_sec = time_sec
+
+    def run(self):
+        extract_thumbnail(Path(self._video_path), self._output_path, time_sec=self._time_sec)
+        if self._output_path.exists():
+            self.ready.emit(str(self._output_path))
 
 
 def _fmt_time(sec: float) -> str:
@@ -51,24 +67,32 @@ class HighlightCard(QFrame):
         self.checkbox.setCursor(Qt.CursorShape.ArrowCursor)
         layout.addWidget(self.checkbox, alignment=Qt.AlignmentFlag.AlignVCenter)
 
-        # Thumbnail
-        thumb_label = QLabel()
-        thumb_label.setFixedSize(80, 48)
-        thumb_label.setStyleSheet("background: #0f1a2e; border-radius: 4px;")
-        thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        thumb_path = THUMB_DIR / f"{self._video_id}.jpg"
-        if thumb_path.exists():
-            pix = QPixmap(str(thumb_path)).scaled(
-                80, 48, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                Qt.TransformationMode.SmoothTransformation,
+        # Thumbnail — extract at clip start time (async)
+        self._thumb_label = QLabel()
+        self._thumb_label.setFixedSize(80, 48)
+        self._thumb_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._thumb_worker: _ThumbWorker | None = None
+        local_path_for_thumb = video_map.get_path(self._video_id) or ""
+        start_int = int(self._start)
+        clip_thumb_path = THUMB_DIR / f"{self._video_id}_{start_int}.jpg"
+        if clip_thumb_path.exists():
+            self._set_thumb_pixmap(str(clip_thumb_path))
+        elif local_path_for_thumb:
+            self._thumb_label.setText("...")
+            self._thumb_label.setStyleSheet(
+                "background: #0f1a2e; border-radius: 4px; color: #888; font-size: 11px;"
             )
-            thumb_label.setPixmap(pix)
+            self._thumb_worker = _ThumbWorker(
+                local_path_for_thumb, clip_thumb_path, self._start, parent=self,
+            )
+            self._thumb_worker.ready.connect(self._set_thumb_pixmap)
+            self._thumb_worker.start()
         else:
-            thumb_label.setText("▶")
-            thumb_label.setStyleSheet(
+            self._thumb_label.setText("▶")
+            self._thumb_label.setStyleSheet(
                 "background: #0f1a2e; border-radius: 4px; color: #64ffda; font-size: 18px;"
             )
-        layout.addWidget(thumb_label)
+        layout.addWidget(self._thumb_label)
 
         # Title + video name + time range
         info_layout = QVBoxLayout()
@@ -109,6 +133,14 @@ class HighlightCard(QFrame):
         score_label.setFixedWidth(36)
         score_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(score_label, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+    def _set_thumb_pixmap(self, path: str):
+        pix = QPixmap(path).scaled(
+            80, 48, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self._thumb_label.setPixmap(pix)
+        self._thumb_label.setStyleSheet("background: #0f1a2e; border-radius: 4px;")
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
