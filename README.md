@@ -157,7 +157,7 @@ Siftly/
 
 ## License
 
-MIT
+[PolyForm Noncommercial 1.0.0](LICENSE) — free for personal and noncommercial use. For commercial licensing, please contact the author.
 
 ---
 
