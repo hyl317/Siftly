@@ -6,3 +6,13 @@ __pycache__/
 .video_paths.json
 .prep/
 .claude/
+
+# Non-distributable LUTs (license restricts redistribution)
+app/luts/slog3_to_rec709.cube
+app/luts/clog2_to_rec709.cube
+app/luts/clog3_to_rec709.cube
+app/luts/nlog_to_rec709.cube
+
+# User-installed custom LUTs and profile config
+app/luts/custom_*.cube
+app/luts/custom_profiles.json
