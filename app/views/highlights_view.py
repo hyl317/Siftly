@@ -162,8 +162,12 @@ class HighlightsView(QWidget):
         export_layout.addStretch()
 
         self.export_mode_combo = QComboBox()
-        self.export_mode_combo.addItems(["Create DaVinci Project", "Export OTIO File"])
-        self.export_mode_combo.setFixedWidth(190)
+        self.export_mode_combo.addItems([
+            "Create DaVinci Project",
+            "Append to DaVinci Timeline",
+            "Export OTIO File",
+        ])
+        self.export_mode_combo.setFixedWidth(210)
         self.export_mode_combo.activated.connect(self._on_export)
         export_layout.addWidget(self.export_mode_combo)
 
@@ -390,8 +394,11 @@ class HighlightsView(QWidget):
             self.status_label.setText("No highlights selected")
             self.status_label.setStyleSheet("color: #888; font-size: 12px;")
             return
-        if self.export_mode_combo.currentIndex() == 0:
+        idx = self.export_mode_combo.currentIndex()
+        if idx == 0:
             self._export_davinci(selected)
+        elif idx == 1:
+            self._append_davinci(selected)
         else:
             self._export_otio(selected)
 
@@ -419,4 +426,11 @@ class HighlightsView(QWidget):
         dlg = DaVinciProjectDialog(selected, export_otio, parent=self)
         if dlg.exec() == DaVinciProjectDialog.DialogCode.Accepted:
             self.status_label.setText("DaVinci Resolve project created successfully")
+            self.status_label.setStyleSheet("color: #64ffda; font-size: 12px;")
+
+    def _append_davinci(self, selected: list[dict]):
+        from app.views.davinci_dialog import DaVinciAppendDialog
+        dlg = DaVinciAppendDialog(selected, parent=self)
+        if dlg.exec() == DaVinciAppendDialog.DialogCode.Accepted:
+            self.status_label.setText("Clips appended to DaVinci Resolve timeline")
             self.status_label.setStyleSheet("color: #64ffda; font-size: 12px;")

@@ -23,6 +23,7 @@ class UploadPanel(QWidget):
         self._prepared_files: dict[str, list[str]] = {}  # original -> prepared paths
         self._upload_to_card: dict[str, str] = {}  # prepared path -> original path
         self._pending_uploads: list[str] = []  # prepared paths waiting to upload
+        self._cancelled_paths: set[str] = set()  # original paths cancelled by user
         self._prep_finished = False
         self._setup_ui()
 
@@ -43,8 +44,9 @@ class UploadPanel(QWidget):
         scroll.setWidget(self.card_container)
         layout.addWidget(scroll)
 
-    def start_upload(self, file_paths: list[str]):
+    def start_upload(self, file_paths: list[str], color_profiles: list[str] | None = None):
         """Begin preprocessing then uploading the given files."""
+        self._color_profiles = color_profiles or [""] * len(file_paths)
         self._prepared_files.clear()
 
         # Check for duplicates
@@ -93,25 +95,67 @@ class UploadPanel(QWidget):
             filename = Path(path_str).name
             label = f"{filename} → {index_name}" if index_name else filename
             card = ProgressCard(label)
+            card.cancel_requested.connect(lambda p=path_str: self._on_cancel(p))
             self._cards[path_str] = card
             self.card_layout.insertWidget(self.card_layout.count() - 1, card)
 
         # Start preprocessing — uploads begin as each file is ready
         self._pending_uploads.clear()
         self._prep_finished = False
-        self._prep_worker = PrepWorker(file_paths, self)
+        self._prep_worker = PrepWorker(file_paths, self._color_profiles, self)
         self._prep_worker.prep_progress.connect(self._on_prep_progress)
         self._prep_worker.prep_done.connect(self._on_prep_done)
         self._prep_worker.error.connect(self._on_prep_error)
         self._prep_worker.finished.connect(self._on_all_prepped)
         self._prep_worker.start()
 
+    def _is_uploading(self, original_path: str) -> bool:
+        """Check if any prepared file for this path is already uploading/indexing."""
+        card = self._cards.get(original_path)
+        if not card:
+            return False
+        status = card.status_label.text()
+        return status in ("Uploading...", "Indexing...")
+
+    def _on_cancel(self, original_path: str):
+        """User cancelled a specific video."""
+        # If already uploading/indexing, we can't interrupt — show info popup
+        if self._is_uploading(original_path):
+            QMessageBox.information(
+                self, "Cannot Cancel",
+                "This video is already being uploaded and cannot be interrupted.\n\n"
+                "If you no longer need it, you can delete it from the index "
+                "on the Gallery page after it finishes.",
+            )
+            return
+
+        self._cancelled_paths.add(original_path)
+
+        # Mark card
+        if original_path in self._cards:
+            self._cards[original_path].mark_cancelled()
+
+        # Kill in-progress transcode
+        if self._prep_worker:
+            self._prep_worker.cancel_file(original_path)
+
+        # Remove any pending uploads for this file
+        prepared = self._prepared_files.get(original_path, [])
+        for p in prepared:
+            if p in self._pending_uploads:
+                self._pending_uploads.remove(p)
+            self._cleanup_prep_file(p)
+
     def _on_prep_progress(self, path: str, status: str, percent: int):
-        if path in self._cards:
+        if path in self._cards and path not in self._cancelled_paths:
             self._cards[path].update_status(status, percent)
 
     def _on_prep_done(self, original_path: str, prepared_paths: list[str]):
         self._prepared_files[original_path] = prepared_paths
+        if original_path in self._cancelled_paths:
+            for p in prepared_paths:
+                self._cleanup_prep_file(p)
+            return
         for p in prepared_paths:
             self._upload_to_card[p] = original_path
             self._pending_uploads.append(p)

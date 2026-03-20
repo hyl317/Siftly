@@ -1,4 +1,4 @@
-"""Dialog for creating a DaVinci Resolve project from highlights."""
+"""Dialogs for DaVinci Resolve integration (create project / append to timeline)."""
 from __future__ import annotations
 
 import os
@@ -7,8 +7,15 @@ import tempfile
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QVBoxLayout,
+    QLineEdit, QMessageBox, QPushButton, QVBoxLayout,
 )
+
+
+def _sort_clips(clips: list[dict], mode: int) -> list[dict]:
+    """Sort clips by mode: 0 = score descending, 1 = video time chronological."""
+    if mode == 1:
+        return sorted(clips, key=lambda c: (c.get("video_id", ""), c.get("start", 0.0)))
+    return sorted(clips, key=lambda c: c.get("score", 0), reverse=True)
 
 
 class _ResolveCheckWorker(QThread):
@@ -99,6 +106,11 @@ class DaVinciProjectDialog(QDialog):
 
         self.timeline_input = QLineEdit("Highlights")
         form.addRow("Timeline Name:", self.timeline_input)
+
+        self.sort_combo = QComboBox()
+        self.sort_combo.addItems(["By Score (highest first)", "By Video Time (chronological)"])
+        self.sort_combo.setEnabled(len(self._highlights) > 1)
+        form.addRow("Clip Order:", self.sort_combo)
 
         self.fps_combo = QComboBox()
         for fps in ("24", "25", "29.97", "29.97 DF", "30", "50", "59.94", "60"):
@@ -230,12 +242,15 @@ class DaVinciProjectDialog(QDialog):
             self.status_label.setStyleSheet("color: #e74c3c;")
             return
 
+        # Sort clips
+        sorted_highlights = _sort_clips(self._highlights, self.sort_combo.currentIndex())
+
         # Export OTIO to temp file
         try:
             fd, tmp_path = tempfile.mkstemp(suffix=".otio")
             os.close(fd)
             self._tmp_path = tmp_path
-            self._export_fn(self._highlights, tmp_path)
+            self._export_fn(sorted_highlights, tmp_path)
         except Exception as e:
             self.status_label.setText(f"OTIO export failed: {e}")
             self.status_label.setStyleSheet("color: #e74c3c;")
@@ -288,3 +303,212 @@ class DaVinciProjectDialog(QDialog):
             except OSError:
                 pass
             self._tmp_path = None
+
+
+# ── Append to existing timeline dialog ────────────────────────────
+
+
+class _LoadProjectsWorker(QThread):
+    result = Signal(bool, str, list)  # connected, message, project_names
+
+    def run(self):
+        try:
+            from app.services.davinci_resolve import _get_resolve, list_projects
+            _get_resolve()
+            projects = list_projects()
+            self.result.emit(True, "Connected to DaVinci Resolve", projects)
+        except (ImportError, ConnectionError) as e:
+            self.result.emit(False, str(e), [])
+
+
+class _LoadTimelinesWorker(QThread):
+    result = Signal(list)  # timeline names
+    error = Signal(str)
+
+    def __init__(self, project_name: str, parent=None):
+        super().__init__(parent)
+        self.project_name = project_name
+
+    def run(self):
+        try:
+            from app.services.davinci_resolve import list_timelines
+            names = list_timelines(self.project_name)
+            self.result.emit(names)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class _AppendWorker(QThread):
+    success = Signal(int)  # number of clips appended
+    error = Signal(str)
+
+    def __init__(self, project_name: str, timeline_name: str,
+                 clips: list[dict], parent=None):
+        super().__init__(parent)
+        self.project_name = project_name
+        self.timeline_name = timeline_name
+        self.clips = clips
+
+    def run(self):
+        try:
+            from app.services.davinci_resolve import append_to_timeline
+            count = append_to_timeline(
+                self.project_name, self.timeline_name, self.clips,
+            )
+            self.success.emit(count)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class DaVinciAppendDialog(QDialog):
+    """Dialog to append highlights to an existing DaVinci Resolve timeline."""
+
+    def __init__(self, highlights: list[dict], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Append to DaVinci Resolve Timeline")
+        self.setMinimumWidth(560)
+        self._highlights = highlights
+        self._workers: list = []
+        self._setup_ui()
+
+    def _setup_ui(self):
+        layout = QVBoxLayout(self)
+
+        # Status
+        self.status_label = QLabel("Checking connection...")
+        self.status_label.setObjectName("davinciStatus")
+        layout.addWidget(self.status_label)
+
+        # Form
+        form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+        self.project_combo = QComboBox()
+        self.project_combo.setEnabled(False)
+        self.project_combo.setMinimumWidth(380)
+        self.project_combo.currentTextChanged.connect(self._on_project_changed)
+        form.addRow("Project:", self.project_combo)
+
+        self.timeline_combo = QComboBox()
+        self.timeline_combo.setEditable(True)
+        self.timeline_combo.setEnabled(False)
+        self.timeline_combo.setMinimumWidth(380)
+        self.timeline_combo.lineEdit().setPlaceholderText("Select or type new name")
+        form.addRow("Timeline:", self.timeline_combo)
+
+        self.sort_combo = QComboBox()
+        self.sort_combo.addItems(["By Score (highest first)", "By Video Time (chronological)"])
+        self.sort_combo.setEnabled(len(self._highlights) > 1)
+        form.addRow("Clip Order:", self.sort_combo)
+
+        layout.addLayout(form)
+        layout.addSpacing(12)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        self.append_btn = QPushButton("Append Clips")
+        self.append_btn.setEnabled(False)
+        self.append_btn.clicked.connect(self._on_append)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(self.append_btn)
+        layout.addLayout(btn_row)
+
+    # ── Connection + project loading ──────────────────────────────
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._load_projects()
+
+    def _load_projects(self):
+        self.status_label.setText("Checking connection...")
+        self.status_label.setStyleSheet("color: #888;")
+        worker = _LoadProjectsWorker(self)
+        worker.result.connect(self._on_projects_loaded)
+        self._workers.append(worker)
+        worker.start()
+
+    def _on_projects_loaded(self, connected: bool, message: str, projects: list):
+        if not connected:
+            self.status_label.setText(message)
+            self.status_label.setStyleSheet("color: #e74c3c;")
+            return
+        self.status_label.setText("Connected to DaVinci Resolve")
+        self.status_label.setStyleSheet("color: #27ae60;")
+        self.project_combo.setEnabled(True)
+        self.project_combo.clear()
+        for name in projects:
+            self.project_combo.addItem(name)
+        if projects:
+            self._on_project_changed(projects[0])
+
+    # ── Timeline loading ──────────────────────────────────────────
+
+    def _on_project_changed(self, project_name: str):
+        if not project_name:
+            return
+        self.timeline_combo.clear()
+        self.timeline_combo.setEnabled(False)
+        self.append_btn.setEnabled(False)
+        self.status_label.setText(f"Loading timelines for '{project_name}'...")
+        self.status_label.setStyleSheet("color: #888;")
+
+        worker = _LoadTimelinesWorker(project_name, self)
+        worker.result.connect(self._on_timelines_loaded)
+        worker.error.connect(self._on_timeline_error)
+        self._workers.append(worker)
+        worker.start()
+
+    def _on_timelines_loaded(self, names: list):
+        self.timeline_combo.setEnabled(True)
+        self.append_btn.setEnabled(True)
+        self.timeline_combo.clear()
+        for name in names:
+            self.timeline_combo.addItem(name)
+        if not names:
+            self.timeline_combo.setEditText("Highlights")
+        self.status_label.setText("Connected to DaVinci Resolve")
+        self.status_label.setStyleSheet("color: #27ae60;")
+
+    def _on_timeline_error(self, msg: str):
+        self.status_label.setText(f"Error: {msg}")
+        self.status_label.setStyleSheet("color: #e74c3c;")
+
+    # ── Append ────────────────────────────────────────────────────
+
+    def _on_append(self):
+        project = self.project_combo.currentText()
+        timeline = self.timeline_combo.currentText().strip()
+        if not project or not timeline:
+            self.status_label.setText("Select a project and timeline")
+            self.status_label.setStyleSheet("color: #e74c3c;")
+            return
+
+        self.append_btn.setEnabled(False)
+        self.append_btn.setText("Appending...")
+        self.status_label.setText("Importing media and appending clips...")
+        self.status_label.setStyleSheet("color: #888;")
+
+        sorted_highlights = _sort_clips(self._highlights, self.sort_combo.currentIndex())
+        worker = _AppendWorker(project, timeline, sorted_highlights, self)
+        worker.success.connect(self._on_success)
+        worker.error.connect(self._on_error)
+        self._workers.append(worker)
+        worker.start()
+
+    def _on_success(self, count: int):
+        self.append_btn.setText("Append Clips")
+        self.accept()
+        msg = QMessageBox(self.parent())
+        msg.setIcon(QMessageBox.Icon.NoIcon)
+        msg.setWindowTitle("Success")
+        msg.setText(f"Appended {count} clip(s) to timeline.")
+        msg.exec()
+
+    def _on_error(self, msg: str):
+        self.append_btn.setEnabled(True)
+        self.append_btn.setText("Append Clips")
+        self.status_label.setText(f"Error: {msg}")
+        self.status_label.setStyleSheet("color: #e74c3c;")

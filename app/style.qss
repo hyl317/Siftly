@@ -297,6 +297,20 @@ QTabBar::tab:hover {
     margin: 2px 0;
 }
 
+#cancelUploadBtn {
+    background: #3a2020;
+    border: 1px solid #5a3030;
+    color: #e74c3c;
+    font-size: 11px;
+    padding: 2px 10px;
+    border-radius: 4px;
+}
+
+#cancelUploadBtn:hover {
+    background: #5a2020;
+    border-color: #e74c3c;
+}
+
 #dismissBtn {
     background: transparent;
     border: none;

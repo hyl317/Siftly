@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -6,7 +9,7 @@ from PySide6.QtCore import QThread, Signal
 
 from app.services.api_client import get_client
 from app.config import get_index_id
-from app.utils.video_prep import prepare_video
+from app.utils.video_prep import VideoPrepCancelled, prepare_video, resolve_lut_path
 
 MAX_PARALLEL_TRANSCODES = 2
 MAX_PARALLEL_UPLOADS = 3
@@ -18,22 +21,38 @@ class PrepWorker(QThread):
     prep_done = Signal(str, list)  # original_path, list of prepared paths
     error = Signal(str, str)  # original_path, error message
 
-    def __init__(self, video_paths: list[str], parent=None):
+    def __init__(self, video_paths: list[str],
+                 color_profiles: list[str] | None = None, parent=None):
         super().__init__(parent)
         self.video_paths = video_paths
+        self._profile_map = dict(zip(video_paths,
+                                     color_profiles or [""] * len(video_paths)))
         self._cancelled = False
+        self._cancel_events: dict[str, threading.Event] = {}
 
     def cancel(self):
         self._cancelled = True
+        for ev in self._cancel_events.values():
+            ev.set()
+
+    def cancel_file(self, path: str):
+        """Cancel preprocessing for a specific file."""
+        ev = self._cancel_events.get(path)
+        if ev:
+            ev.set()
 
     def _prep_one(self, path_str: str):
         path = Path(path_str)
+        cancel_event = self._cancel_events[path_str]
         self.prep_progress.emit(path_str, "Preprocessing...", 0)
+
+        lut_path = resolve_lut_path(self._profile_map.get(path_str, ""), path)
 
         def cb(status):
             self.prep_progress.emit(path_str, status, 50)
 
-        prepared = prepare_video(path, progress_callback=cb)
+        prepared = prepare_video(path, lut_path=lut_path,
+                                 cancel_event=cancel_event, progress_callback=cb)
         return path_str, [str(p) for p in prepared]
 
     def run(self):
@@ -42,6 +61,7 @@ class PrepWorker(QThread):
             for path_str in self.video_paths:
                 if self._cancelled:
                     break
+                self._cancel_events[path_str] = threading.Event()
                 futures[pool.submit(self._prep_one, path_str)] = path_str
 
             for future in as_completed(futures):
@@ -52,6 +72,8 @@ class PrepWorker(QThread):
                     _, prepared = future.result()
                     self.prep_progress.emit(path_str, "Waiting to upload...", 100)
                     self.prep_done.emit(path_str, prepared)
+                except VideoPrepCancelled:
+                    pass  # UploadPanel already marked the card
                 except Exception as e:
                     self.error.emit(path_str, str(e))
 
