@@ -31,14 +31,13 @@ class ProgressCard(QFrame):
         self.cancel_btn.setObjectName("cancelUploadBtn")
         self.cancel_btn.setFixedHeight(24)
         self.cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.cancel_btn.setToolTip("Cancel upload")
+        self.cancel_btn.setToolTip("")
         self.cancel_btn.clicked.connect(self._cancel)
 
-        self.dismiss_btn = QPushButton("\u2715")
+        self.dismiss_btn = QPushButton("Dismiss")
         self.dismiss_btn.setObjectName("dismissBtn")
-        self.dismiss_btn.setFixedSize(24, 24)
+        self.dismiss_btn.setFixedHeight(24)
         self.dismiss_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.dismiss_btn.setToolTip("Dismiss")
         self.dismiss_btn.clicked.connect(self._dismiss)
         self.dismiss_btn.setVisible(False)
 
