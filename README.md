@@ -16,16 +16,14 @@ Siftly lets you upload videos, search them with natural language, auto-detect hi
 - One-click project creation from selected highlights
 - Configure frame rate, resolution (1080p / 4K / 8K / custom), and working folders
 - Auto-imports source media and builds timeline via Resolve's scripting API
-- Reads current Resolve project defaults for working folder paths
 - Also supports standalone OTIO file export
 
 ### Upload & Preprocessing
+- **LOG footage support** — auto-detects camera LOG profiles (S-Log3, C-Log3, V-Log, etc.) and applies a LUT before indexing for improved AI search quality
 - Browse folders or drag-and-drop video files
 - Auto-transcodes videos >720p for faster upload
 - Splits large files (>1.8 GB) automatically
 - Parallel uploads with progress tracking and duplicate detection
-- Shows target index name per upload
-- **LOG footage support** — auto-detects camera LOG profiles (S-Log3, C-Log3, V-Log, etc.) and applies a LUT before indexing for improved AI search quality
 
 ### Highlights
 Three discovery modes:
@@ -33,25 +31,11 @@ Three discovery modes:
 - **Categories** — One-click search by preset categories (scenery, food, action, people, wildlife, funny, emotional, music, travel)
 - **Custom Search** — Free-form text queries (e.g. "dog playing in water")
 
-Selection tools:
-- Select all, or filter by score threshold (Score >= N)
-- Normalized scoring — best match is always 100%
-
 ### Search
 - Natural language search across all indexed videos (visual + audio)
 - Relevance scoring via cosine similarity of Twelve Labs embeddings
-- Color-coded results (green/orange/red) with threshold filtering
-- Click any result to jump to that clip in the built-in player
-
-### Gallery
-- Thumbnail grid of all indexed videos with duration badges
-- Right-click to reveal in Finder or delete from index
-- Auto-generated thumbnails via ffmpeg
-- Missing file detection (warns if local file moved/deleted)
 
 ### Video Player
-- Built-in playback with clip range markers on the seek slider
-- Volume control with mute toggle
 - Chat with AI about video content (streaming responses)
 - One-click summary and gist generation (title, topics, hashtags)
 
