@@ -24,6 +24,37 @@ def set_api_key(key: str):
     os.environ["TWELVE_LABS_API_KEY"] = key
 
 
+def get_anthropic_api_key() -> str:
+    return os.getenv("ANTHROPIC_API_KEY", "")
+
+
+def set_anthropic_api_key(key: str):
+    if not ENV_PATH.exists():
+        ENV_PATH.touch()
+    set_key(str(ENV_PATH), "ANTHROPIC_API_KEY", key)
+    os.environ["ANTHROPIC_API_KEY"] = key
+
+
+VISION_MODELS = {
+    "claude-opus-4-6": "Opus 4.6 — most accurate, ~$0.15/run",
+    "claude-sonnet-4-6": "Sonnet 4.6 — balanced, ~$0.03/run",
+    "claude-haiku-4-5-20251001": "Haiku 4.5 — fastest & cheapest, ~$0.01/run",
+}
+
+DEFAULT_VISION_MODEL = "claude-sonnet-4-6"
+
+
+def get_vision_model() -> str:
+    return os.getenv("ANTHROPIC_VISION_MODEL", DEFAULT_VISION_MODEL)
+
+
+def set_vision_model(model_id: str):
+    if not ENV_PATH.exists():
+        ENV_PATH.touch()
+    set_key(str(ENV_PATH), "ANTHROPIC_VISION_MODEL", model_id)
+    os.environ["ANTHROPIC_VISION_MODEL"] = model_id
+
+
 def get_index_id() -> str:
     return os.getenv("TWELVE_LABS_INDEX_ID", "")
 

@@ -4,7 +4,11 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QVBoxLayout,
 )
 
-from app.config import get_api_key, get_index_id, set_api_key, set_index_id
+from app.config import (
+    VISION_MODELS,
+    get_api_key, get_anthropic_api_key, get_index_id, get_vision_model,
+    set_api_key, set_anthropic_api_key, set_index_id, set_vision_model,
+)
 from app.services.api_client import get_client, reset_client, test_connection
 
 
@@ -76,13 +80,13 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout(self)
 
         # API Key section
-        layout.addWidget(QLabel("API Key"))
+        layout.addWidget(QLabel("Twelve Labs API Key"))
         key_row = QHBoxLayout()
         self.key_input = QLineEdit()
         self.key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.key_input.setPlaceholderText("Enter your Twelve Labs API key")
         self.toggle_btn = QPushButton("Show")
-        self.toggle_btn.setFixedWidth(50)
+        self.toggle_btn.setFixedWidth(70)
         self.toggle_btn.clicked.connect(self._toggle_visibility)
         key_row.addWidget(self.key_input)
         key_row.addWidget(self.toggle_btn)
@@ -98,11 +102,33 @@ class SettingsDialog(QDialog):
 
         layout.addSpacing(16)
 
+        # Anthropic API Key section (for visual automation)
+        layout.addWidget(QLabel("Anthropic API Key (for Automation)"))
+        anthropic_row = QHBoxLayout()
+        self.anthropic_key_input = QLineEdit()
+        self.anthropic_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.anthropic_key_input.setPlaceholderText("Enter your Anthropic API key")
+        self.anthropic_toggle_btn = QPushButton("Show")
+        self.anthropic_toggle_btn.setFixedWidth(70)
+        self.anthropic_toggle_btn.clicked.connect(self._toggle_anthropic_visibility)
+        anthropic_row.addWidget(self.anthropic_key_input)
+        anthropic_row.addWidget(self.anthropic_toggle_btn)
+        layout.addLayout(anthropic_row)
+
+        # Vision model selector
+        layout.addWidget(QLabel("Vision Model"))
+        self.model_combo = QComboBox()
+        for model_id, label in VISION_MODELS.items():
+            self.model_combo.addItem(label, model_id)
+        layout.addWidget(self.model_combo)
+
+        layout.addSpacing(16)
+
         # Index section
         layout.addWidget(QLabel("Index"))
         self.index_combo = QComboBox()
         self.refresh_btn = QPushButton("Refresh")
-        self.refresh_btn.setFixedWidth(70)
+        self.refresh_btn.setFixedWidth(80)
         self.refresh_btn.clicked.connect(self._load_indexes)
         idx_row = QHBoxLayout()
         idx_row.addWidget(self.index_combo, stretch=1)
@@ -135,6 +161,13 @@ class SettingsDialog(QDialog):
 
     def _load_current(self):
         self.key_input.setText(get_api_key())
+        self.anthropic_key_input.setText(get_anthropic_api_key())
+        # Select saved vision model
+        current_model = get_vision_model()
+        for i in range(self.model_combo.count()):
+            if self.model_combo.itemData(i) == current_model:
+                self.model_combo.setCurrentIndex(i)
+                break
         if get_api_key():
             self._load_indexes()
 
@@ -145,6 +178,14 @@ class SettingsDialog(QDialog):
         else:
             self.key_input.setEchoMode(QLineEdit.EchoMode.Password)
             self.toggle_btn.setText("Show")
+
+    def _toggle_anthropic_visibility(self):
+        if self.anthropic_key_input.echoMode() == QLineEdit.EchoMode.Password:
+            self.anthropic_key_input.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.anthropic_toggle_btn.setText("Hide")
+        else:
+            self.anthropic_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+            self.anthropic_toggle_btn.setText("Show")
 
     def _test_connection(self):
         key = self.key_input.text().strip()
@@ -223,6 +264,12 @@ class SettingsDialog(QDialog):
         if key:
             set_api_key(key)
             reset_client()
+        anthropic_key = self.anthropic_key_input.text().strip()
+        if anthropic_key:
+            set_anthropic_api_key(anthropic_key)
+        model_id = self.model_combo.currentData()
+        if model_id:
+            set_vision_model(model_id)
         idx_id = self.index_combo.currentData()
         if idx_id:
             set_index_id(idx_id)

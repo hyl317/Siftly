@@ -111,6 +111,7 @@ class MainWindow(QMainWindow):
             ("gallery", "Gallery"),
             ("search", "Search"),
             ("highlights", "Highlights"),
+            ("advisor", "Assistant (beta)"),
             ("settings", "Settings"),
         ]
 
@@ -177,10 +178,15 @@ class MainWindow(QMainWindow):
         self.highlights_view.result_clicked.connect(self._on_search_result_clicked)
         self.stack.addWidget(self.highlights_view)  # index 3
 
+        # Advisor view
+        from app.views.advisor_view import AdvisorView
+        self.advisor_view = AdvisorView()
+        self.stack.addWidget(self.advisor_view)  # index 4
+
         # Video detail view
         self.video_detail = VideoDetailView()
         self.video_detail.back_requested.connect(self._go_back_from_detail)
-        self.stack.addWidget(self.video_detail)  # index 4
+        self.stack.addWidget(self.video_detail)  # index 5
 
         # Default to upload
         self._navigate("upload")
@@ -266,6 +272,8 @@ class MainWindow(QMainWindow):
         elif key == "highlights":
             self.stack.setCurrentIndex(3)
             self.highlights_view._refresh_scope()
+        elif key == "advisor":
+            self.stack.setCurrentIndex(4)
         elif key == "settings":
             self._show_settings()
             # Stay on current page after settings
@@ -288,7 +296,7 @@ class MainWindow(QMainWindow):
             seek_to, clip_start, clip_end,
         )
         self._pre_detail_index = self.stack.currentIndex()
-        self.stack.setCurrentIndex(4)
+        self.stack.setCurrentIndex(5)
 
     def _on_search_result_clicked(self, video_id: str, start: float, end: float):
         local_path = video_map.get_path(video_id) or ""

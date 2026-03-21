@@ -6,57 +6,49 @@
 
 # Siftly
 
-A desktop app for AI-powered video highlight discovery and DaVinci Resolve integration, built on the [Twelve Labs](https://www.twelvelabs.io/) video understanding platform.
-
-Siftly lets you upload videos, search them with natural language, auto-detect highlights, and create ready-to-edit DaVinci Resolve projects — complete with media pool, timeline, and project settings — so you can start editing immediately.
+A desktop tool that uses the [Twelve Labs](https://www.twelvelabs.io/) video understanding API to find highlights in your footage, then generates a DaVinci Resolve project ready to edit.
 
 ## Features
 
 ### DaVinci Resolve Integration
-- One-click project creation from selected highlights
-- Configure frame rate, resolution (1080p / 4K / 8K / custom), and working folders
-- Auto-imports source media and builds timeline via Resolve's scripting API
-- Also supports standalone OTIO file export
+- Pick your clips, hit export, get a Resolve project with media pool and timeline already set up
+- Frame rate, resolution, working folders — all configurable
+- OTIO export also available if you don't use Resolve
 
-### Upload & Preprocessing
-- **LOG footage support** — auto-detects camera LOG profiles (S-Log3, C-Log3, V-Log, etc.) and applies a LUT before indexing for improved AI search quality
-- Browse folders or drag-and-drop video files
-- Auto-transcodes videos >720p for faster upload
-- Splits large files (>1.8 GB) automatically
-- Parallel uploads with progress tracking and duplicate detection
+### Upload
+- **LOG footage support** — auto-detects camera LOG profiles (S-Log3, C-Log2, V-Log, etc.) and applies a LUT before indexing for better search results
+- Drag-and-drop files or browse folders
+- Auto-transcodes >720p, auto-splits >1.8 GB
+- Parallel uploads with progress tracking
 
 ### Highlights
-Three discovery modes:
-- **Auto-detect** — AI analyzes each video and returns the most interesting moments with titles, categories, and confidence scores
-- **Categories** — One-click search by preset categories (scenery, food, action, people, wildlife, funny, emotional, music, travel)
-- **Custom Search** — Free-form text queries (e.g. "dog playing in water")
+Three ways to find clips:
+- **Auto-detect** — let the AI pick the best moments, returns titles, categories, and confidence scores
+- **Categories** — one-click presets (scenery, food, action, people, wildlife, etc.)
+- **Custom** — type anything (e.g. "bird singing in a tree")
 
 ### Search
-- Natural language search across all indexed videos (visual + audio)
-- Relevance scoring via cosine similarity of Twelve Labs embeddings
+- Natural language search across all uploaded videos (visual + audio)
+- Relevance scoring via Twelve Labs embeddings
 
-### Video Player
-- Chat with AI about video content (streaming responses)
-- One-click summary and gist generation (title, topics, hashtags)
+### Player
+- Built-in player with AI chat about video content
+- One-click summary generation (title, topics, hashtags)
 
-## Prerequisites
+## Requirements
 
 - **Python** >= 3.8
-- **ffmpeg** and **ffprobe** installed and on PATH
-- A [Twelve Labs API key](https://dashboard.twelvelabs.io/)
-- **DaVinci Resolve** (optional, for direct project creation — must be running)
+- **ffmpeg** / **ffprobe**
+- [Twelve Labs API key](https://dashboard.twelvelabs.io/)
+- **DaVinci Resolve** (optional, needs to be running for project creation)
 
-## Installation
+## Install
 
 ```bash
 git clone https://github.com/hyl317/Siftly.git
 cd Siftly
-
-# Create a virtual environment (conda or venv)
 conda create -n siftly python=3.11
 conda activate siftly
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
@@ -66,29 +58,27 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` and add your Twelve Labs API key:
+Put your Twelve Labs API key in `.env`:
 
 ```
 TWELVE_LABS_API_KEY=your_key_here
 ```
 
-The index ID will be set automatically through the Settings dialog on first launch.
+First launch will ask you to pick or create an index.
 
-## Usage
+## Run
 
 ```bash
 python run.py
 ```
 
-On first launch, the Settings dialog will prompt for your API key and let you select or create an index.
+**Workflow:**
 
-**Typical workflow:**
-
-1. **Upload** — Select a folder of videos, check the ones you want, and upload
-2. **Gallery** — Browse uploaded videos, click to view details and chat with AI
-3. **Search** — Find specific moments across all videos with natural language
-4. **Highlights** — Discover the best clips automatically or by category
-5. **Export** — Select highlights and create a DaVinci Resolve project, or export as OTIO
+1. **Upload** — pick a folder, check the files you want, upload
+2. **Gallery** — browse uploaded videos, click to chat with AI about them
+3. **Search** — type what you're looking for
+4. **Highlights** — auto-detect or search by category
+5. **Export** — select clips, generate a Resolve project or OTIO file
 
 ## Tech Stack
 
@@ -96,53 +86,10 @@ On first launch, the Settings dialog will prompt for your API key and let you se
 - **AI**: Twelve Labs API (Marengo 3.0 + Pegasus 1.2)
 - **Video**: ffmpeg/ffprobe, OpenTimelineIO
 - **NLE**: DaVinci Resolve Scripting API
-- **Architecture**: Multi-threaded workers (QThread) for non-blocking UI
-
-## Project Structure
-
-```
-Siftly/
-├── run.py                  # Entry point
-├── requirements.txt
-├── .env.example
-├── app/
-│   ├── main_window.py      # Main window, navigation, index management
-│   ├── config.py           # Settings, constants, env loading
-│   ├── video_map.py        # Persistent video_id <-> local path mapping
-│   ├── style.qss           # Dark theme stylesheet
-│   ├── models/
-│   │   └── data.py         # Data classes (LocalVideo, IndexedVideo, etc.)
-│   ├── views/
-│   │   ├── folder_browser.py    # File selection + drag-and-drop
-│   │   ├── upload_panel.py      # Upload queue with progress cards
-│   │   ├── gallery_view.py      # Video thumbnail grid
-│   │   ├── video_detail.py      # Player + chat + summary tabs
-│   │   ├── search_view.py       # Text search with results tree
-│   │   ├── highlights_view.py   # Highlight discovery + export
-│   │   ├── davinci_dialog.py    # DaVinci project creation dialog
-│   │   ├── settings_dialog.py   # API key + index configuration
-│   │   └── chat_widget.py       # Streaming AI chat
-│   ├── services/
-│   │   ├── api_client.py        # Twelve Labs client singleton
-│   │   ├── upload_worker.py     # Prep + upload workers
-│   │   ├── search_worker.py     # Search with embedding scoring
-│   │   ├── highlights_worker.py # Auto-detect + search highlights
-│   │   ├── analysis_worker.py   # Summary/gist/chat workers
-│   │   ├── otio_export.py       # OTIO timeline generation
-│   │   └── davinci_resolve.py   # Resolve scripting API wrapper
-│   ├── widgets/
-│   │   ├── highlight_card.py    # Highlight result card
-│   │   ├── progress_card.py     # Upload progress card
-│   │   └── video_thumbnail.py   # Gallery thumbnail widget
-│   └── utils/
-│       ├── video_prep.py        # Transcode, split, validate
-│       ├── thumbnails.py        # Thumbnail extraction + ffprobe
-│       └── file_scanner.py      # Local folder scanning
-```
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE) — free for personal and noncommercial use. For commercial licensing, please contact the author.
+[PolyForm Noncommercial 1.0.0](LICENSE) — free for personal and noncommercial use. Commercial licensing available on request.
 
 ---
 
@@ -150,57 +97,49 @@ Siftly/
 
 # Siftly
 
-一款基于 [Twelve Labs](https://www.twelvelabs.io/) 视频理解平台的桌面应用，用于 AI 驱动的视频精彩片段发现与 DaVinci Resolve 集成。
-
-Siftly 支持上传视频、自然语言搜索、自动发现精彩片段，并一键创建可直接编辑的 DaVinci Resolve 项目——媒体池、时间线、项目设置一步到位，打开即可开始剪辑。
+桌面工具，用 [Twelve Labs](https://www.twelvelabs.io/) 的视频理解 API 从素材里挑片段，然后直接生成达芬奇项目，打开就能剪。
 
 ## 功能
 
-### DaVinci Resolve 集成
-- 从选定的精彩片段一键创建项目
-- 配置帧率、分辨率（1080p / 4K / 8K / 自定义）和工作文件夹
-- 通过 Resolve 脚本 API 自动导入源媒体并构建时间线
-- 同时支持独立的 OTIO 文件导出
+### 达芬奇集成
+- 选好片段后一键生成 DaVinci Resolve 项目（帧率、分辨率、工作目录都能配）
+- 源素材自动导入媒体池，时间线自动排好
+- 也能导出 OTIO 文件单独用
 
-### 上传与预处理
-- **LOG 素材支持** — 自动检测相机 LOG 色彩配置（S-Log3、C-Log3、V-Log 等），上传前自动应用 LUT 以提升 AI 搜索质量
-- 浏览文件夹或拖放视频文件
-- 自动将 >720p 的视频转码以加速上传
-- 自动拆分大文件（>1.8 GB）
-- 并行上传，带进度追踪和重复检测
+### 上传
+- **支持 LOG 素材** — 自动识别相机的 LOG 格式（S-Log3、C-Log2、V-Log 等），上传前挂 LUT 转 Rec.709，搜索效果更好
+- 拖文件夹或拖文件都行
+- 超过 720p 自动转码，超过 1.8 GB 自动拆分
+- 多文件并行上传
 
-### 精彩片段
-三种发现模式：
-- **自动检测** — AI 分析每个视频，返回最有趣的片段，包含标题、分类和置信度评分
-- **分类搜索** — 按预设分类一键搜索（风景、美食、动作、人物、野生动物、搞笑、情感、音乐、旅行）
-- **自定义搜索** — 自由文本查询（如"狗在水里玩耍"）
+### 找片段
+三种方式：
+- **自动** — 丢进去让 AI 自己挑，会返回标题、分类、置信度
+- **按分类** — 风景、美食、运动、人物、野生动物之类的预设标签一键搜
+- **自定义** — 随便打字搜，比如"鸟在树上唱歌"
 
 ### 搜索
-- 跨所有已索引视频的自然语言搜索（视觉 + 音频）
-- 基于 Twelve Labs 嵌入向量余弦相似度的相关性评分
+- 用自然语言搜所有已上传的视频，画面和声音都能搜到
+- 用 Twelve Labs embedding 算相似度打分
 
-### 视频播放器
-- 与 AI 就视频内容进行对话（流式响应）
-- 一键生成摘要和简介（标题、主题、标签）
+### 播放器
+- 内置播放器，可以跟 AI 聊视频内容
+- 一键生成摘要（标题、话题、标签）
 
-## 前置要求
+## 需要什么
 
 - **Python** >= 3.8
-- **ffmpeg** 和 **ffprobe** 已安装并在 PATH 中
-- [Twelve Labs API 密钥](https://dashboard.twelvelabs.io/)
-- **DaVinci Resolve**（可选，用于直接创建项目——需要在运行状态）
+- **ffmpeg** / **ffprobe**
+- [Twelve Labs API key](https://dashboard.twelvelabs.io/)
+- **DaVinci Resolve**（可选，要用达芬奇集成的话需要开着）
 
-## 安装
+## 装起来
 
 ```bash
 git clone https://github.com/hyl317/Siftly.git
 cd Siftly
-
-# 创建虚拟环境（conda 或 venv）
 conda create -n siftly python=3.11
 conda activate siftly
-
-# 安装依赖
 pip install -r requirements.txt
 ```
 
@@ -210,80 +149,35 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-编辑 `.env` 文件，添加你的 Twelve Labs API 密钥：
+把 Twelve Labs API key 填进 `.env`：
 
 ```
 TWELVE_LABS_API_KEY=your_key_here
 ```
 
-索引 ID 将在首次启动时通过设置对话框自动设置。
+第一次打开会弹设置窗口，选一个 index 就行。
 
-## 使用
+## 跑起来
 
 ```bash
 python run.py
 ```
 
-首次启动时，设置对话框会提示输入 API 密钥并选择或创建索引。
+**大致流程：**
 
-**典型工作流程：**
-
-1. **上传** — 选择视频文件夹，勾选需要的文件，上传
-2. **素材库** — 浏览已上传的视频，点击查看详情并与 AI 对话
-3. **搜索** — 使用自然语言在所有视频中查找特定片段
-4. **精彩片段** — 自动发现最佳片段或按分类搜索
-5. **导出** — 选择精彩片段，创建 DaVinci Resolve 项目或导出为 OTIO 文件
+1. **上传** — 选文件夹，勾上要的视频，上传
+2. **素材库** — 看缩略图，点进去可以跟 AI 聊
+3. **搜索** — 打字搜片段
+4. **找片段** — 让 AI 自动挑或者按分类找
+5. **导出** — 选好片段，生成达芬奇项目或者导出 OTIO
 
 ## 技术栈
 
 - **GUI**：PySide6 (Qt6)
 - **AI**：Twelve Labs API（Marengo 3.0 + Pegasus 1.2）
-- **视频**：ffmpeg/ffprobe、OpenTimelineIO
-- **非线性编辑**：DaVinci Resolve Scripting API
-- **架构**：多线程工作器（QThread），确保 UI 不阻塞
-
-## 项目结构
-
-```
-Siftly/
-├── run.py                  # 入口文件
-├── requirements.txt
-├── .env.example
-├── app/
-│   ├── main_window.py      # 主窗口、导航、索引管理
-│   ├── config.py           # 设置、常量、环境变量加载
-│   ├── video_map.py        # 持久化 video_id <-> 本地路径映射
-│   ├── style.qss           # 深色主题样式表
-│   ├── models/
-│   │   └── data.py         # 数据类（LocalVideo、IndexedVideo 等）
-│   ├── views/
-│   │   ├── folder_browser.py    # 文件选择 + 拖放
-│   │   ├── upload_panel.py      # 上传队列及进度卡片
-│   │   ├── gallery_view.py      # 视频缩略图网格
-│   │   ├── video_detail.py      # 播放器 + 对话 + 摘要标签页
-│   │   ├── search_view.py       # 文本搜索与结果树
-│   │   ├── highlights_view.py   # 精彩片段发现 + 导出
-│   │   ├── davinci_dialog.py    # DaVinci 项目创建对话框
-│   │   ├── settings_dialog.py   # API 密钥 + 索引配置
-│   │   └── chat_widget.py       # 流式 AI 对话
-│   ├── services/
-│   │   ├── api_client.py        # Twelve Labs 客户端单例
-│   │   ├── upload_worker.py     # 预处理 + 上传工作器
-│   │   ├── search_worker.py     # 搜索及嵌入向量评分
-│   │   ├── highlights_worker.py # 自动检测 + 搜索精彩片段
-│   │   ├── analysis_worker.py   # 摘要/简介/对话工作器
-│   │   ├── otio_export.py       # OTIO 时间线生成
-│   │   └── davinci_resolve.py   # Resolve 脚本 API 封装
-│   ├── widgets/
-│   │   ├── highlight_card.py    # 精彩片段结果卡片
-│   │   ├── progress_card.py     # 上传进度卡片
-│   │   └── video_thumbnail.py   # 素材库缩略图组件
-│   └── utils/
-│       ├── video_prep.py        # 转码、拆分、验证
-│       ├── thumbnails.py        # 缩略图提取 + ffprobe
-│       └── file_scanner.py      # 本地文件夹扫描
-```
+- **视频处理**：ffmpeg/ffprobe、OpenTimelineIO
+- **NLE**：DaVinci Resolve Scripting API
 
 ## 许可证
 
-[PolyForm Noncommercial 1.0.0](LICENSE) — 个人和非商业用途免费使用。商业授权请联系作者。
+[PolyForm Noncommercial 1.0.0](LICENSE) — 个人和非商业用途免费。商业用途请联系作者。

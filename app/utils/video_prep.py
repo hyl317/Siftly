@@ -89,7 +89,7 @@ LOG_PROFILES = get_all_profiles()
 # Camera make (lowercased) -> default LOG profile when 10-bit is detected
 CAMERA_LOG_MAP = {
     "sony":      "S-Log3",
-    "canon":     "C-Log3",
+    "canon":     "C-Log2",
     "dji":       "D-Log M",
     "nikon":     "N-Log",
     "panasonic": "V-Log",
