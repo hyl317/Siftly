@@ -119,6 +119,15 @@ class UploadWorker(QThread):
                     sleep_interval=5,
                     callback=on_status,
                 )
+                # Cache embeddings immediately after indexing
+                if result.video_id:
+                    self.progress.emit(path_str, "Caching embeddings...", 90)
+                    try:
+                        from app.services.embedding_cache import fetch_and_cache
+                        fetch_and_cache(client, index_id, result.video_id)
+                    except Exception:
+                        pass  # Non-critical — will be fetched on first search
+
                 self.progress.emit(path_str, "Ready", 100)
                 self.finished.emit(path_str, result.video_id or "")
                 return

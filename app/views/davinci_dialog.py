@@ -7,7 +7,7 @@ import tempfile
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
-    QLineEdit, QMessageBox, QPushButton, QVBoxLayout,
+    QLineEdit, QListView, QMessageBox, QPushButton, QVBoxLayout,
 )
 
 
@@ -108,17 +108,20 @@ class DaVinciProjectDialog(QDialog):
         form.addRow("Timeline Name:", self.timeline_input)
 
         self.sort_combo = QComboBox()
+        self.sort_combo.setView(QListView())
         self.sort_combo.addItems(["By Score (highest first)", "By Video Time (chronological)"])
         self.sort_combo.setEnabled(len(self._highlights) > 1)
         form.addRow("Clip Order:", self.sort_combo)
 
         self.fps_combo = QComboBox()
+        self.fps_combo.setView(QListView())
         for fps in ("24", "25", "29.97", "29.97 DF", "30", "50", "59.94", "60"):
             self.fps_combo.addItem(fps)
         self.fps_combo.setCurrentText("25")
         form.addRow("Frame Rate:", self.fps_combo)
 
         self.res_combo = QComboBox()
+        self.res_combo.setView(QListView())
         self.res_combo.addItems(["1920x1080", "3840x2160", "7680x4320", "Custom"])
         self.res_combo.setCurrentText("3840x2160")
         self.res_combo.currentTextChanged.connect(self._on_res_changed)
@@ -384,12 +387,14 @@ class DaVinciAppendDialog(QDialog):
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
         self.project_combo = QComboBox()
+        self.project_combo.setView(QListView())
         self.project_combo.setEnabled(False)
         self.project_combo.setMinimumWidth(380)
         self.project_combo.currentTextChanged.connect(self._on_project_changed)
         form.addRow("Project:", self.project_combo)
 
         self.timeline_combo = QComboBox()
+        self.timeline_combo.setView(QListView())
         self.timeline_combo.setEditable(True)
         self.timeline_combo.setEnabled(False)
         self.timeline_combo.setMinimumWidth(380)
@@ -397,6 +402,7 @@ class DaVinciAppendDialog(QDialog):
         form.addRow("Timeline:", self.timeline_combo)
 
         self.sort_combo = QComboBox()
+        self.sort_combo.setView(QListView())
         self.sort_combo.addItems(["By Score (highest first)", "By Video Time (chronological)"])
         self.sort_combo.setEnabled(len(self._highlights) > 1)
         form.addRow("Clip Order:", self.sort_combo)

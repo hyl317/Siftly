@@ -108,25 +108,11 @@ class SearchWorker(QThread):
             )
             query_vec = text_emb_resp.text_embedding.segments[0].float_
 
-            # 3. Retrieve video embeddings for each unique video in results
+            # 3. Retrieve video embeddings (cached + parallel)
             unique_video_ids = list({c["video_id"] for c in raw_clips})
-            video_segments: dict[str, list] = {}  # video_id -> list of (start, end, embedding)
 
-            for vid in unique_video_ids:
-                try:
-                    detail = client.indexes.videos.retrieve(
-                        index_id=index_id,
-                        video_id=vid,
-                        embedding_option=["visual"],
-                    )
-                    if detail.embedding and detail.embedding.video_embedding:
-                        video_segments[vid] = [
-                            (seg.start_offset_sec, seg.end_offset_sec, seg.float_)
-                            for seg in detail.embedding.video_embedding.segments
-                            if seg.float_
-                        ]
-                except Exception:
-                    pass  # Skip videos where embedding retrieval fails
+            from app.services.embedding_cache import fetch_many
+            video_segments = fetch_many(client, index_id, unique_video_ids)
 
             # 4. Compute raw cosine similarity for each search result clip
             for clip in raw_clips:

@@ -4,7 +4,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
-    QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
+    QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QListView,
     QMessageBox, QPushButton, QRadioButton, QTreeWidget, QTreeWidgetItem,
     QVBoxLayout, QWidget,
 )
@@ -244,6 +244,7 @@ class FolderBrowser(QWidget):
         set_all_label = QLabel("Color Profile:")
         set_all_label.setStyleSheet("font-size: 12px; color: #aaa;")
         self.set_all_combo = QComboBox()
+        self.set_all_combo.setView(QListView())
         self.set_all_combo.setFixedWidth(160)
         self.set_all_combo.setToolTip(
             "Set color profile for all videos at once.\n"
@@ -331,6 +332,7 @@ class FolderBrowser(QWidget):
     def _make_profile_combo(self, video_path: Path) -> QComboBox:
         """Create a per-row profile combo, pre-selecting the auto-detected profile."""
         combo = QComboBox()
+        combo.setView(QListView())
         combo.addItems(_build_per_row_items())
 
         detected = detect_log_profile(video_path)

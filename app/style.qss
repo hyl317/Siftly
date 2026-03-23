@@ -99,8 +99,49 @@ QComboBox::drop-down {
 QComboBox QAbstractItemView {
     background-color: #0f1a2e;
     border: 1px solid #2a3f5f;
+    border-radius: 6px;
     color: #e0e0e0;
+    padding: 4px 0;
     selection-background-color: #233554;
+    selection-color: #64ffda;
+}
+
+QComboBox QAbstractItemView::item {
+    padding: 6px 12px;
+}
+
+QComboBox QAbstractItemView::item:hover,
+QComboBox QAbstractItemView::item:selected {
+    background-color: #233554;
+    color: #64ffda;
+}
+
+/* Context menus and dropdown menus */
+QMenu {
+    background-color: #0f1a2e;
+    border: 1px solid #2a3f5f;
+    border-radius: 6px;
+    color: #e0e0e0;
+    padding: 4px 0;
+}
+
+QMenu::item {
+    padding: 6px 20px;
+}
+
+QMenu::item:selected {
+    background-color: #233554;
+    color: #64ffda;
+}
+
+QMenu::item:disabled {
+    color: #4a5568;
+}
+
+QMenu::separator {
+    height: 1px;
+    background: #2a3f5f;
+    margin: 4px 8px;
 }
 
 /* Checkboxes */

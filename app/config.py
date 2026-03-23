@@ -9,6 +9,7 @@ load_dotenv(ENV_PATH)
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 PREP_DIR = PROJECT_ROOT / ".prep"
+EMBEDDINGS_CACHE_DIR = PROJECT_ROOT / ".embeddings_cache"
 MAX_FILE_SIZE_BYTES = int(1.8 * 1024 * 1024 * 1024)  # 1.8 GB
 MAX_RESOLUTION_HEIGHT = 720
 

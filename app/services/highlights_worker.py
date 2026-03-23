@@ -140,7 +140,7 @@ class HighlightsAnalyzeWorker(QThread):
 
 class HighlightsSearchWorker(QThread):
     """Search-based highlights using cosine similarity scoring."""
-    results = Signal(list)
+    results = Signal(list, dict)   # highlights, timing_info
     error = Signal(str)
 
     def __init__(self, query: str, category: str = "",
@@ -154,8 +154,10 @@ class HighlightsSearchWorker(QThread):
         try:
             client = get_client()
             index_id = get_index_id()
+            timing = {}
 
             # 1. Get search results
+            t0 = time.monotonic()
             search_results = client.search.query(
                 index_id=index_id,
                 query_text=self.query,
@@ -174,39 +176,30 @@ class HighlightsSearchWorker(QThread):
                     "end": clip.end if clip.end is not None else 0.0,
                     "score": 0.0,
                 })
+            timing["search"] = time.monotonic() - t0
 
             if not raw_clips:
-                self.results.emit([])
+                timing["embedding"] = 0.0
+                timing["scoring"] = 0.0
+                self.results.emit([], timing)
                 return
 
-            # 2. Embed query text
+            # 2. Embed query text + retrieve video embeddings (cached + parallel)
+            t1 = time.monotonic()
             text_emb_resp = client.embed.create(
                 model_name="marengo3.0",
                 text=self.query,
             )
             query_vec = text_emb_resp.text_embedding.segments[0].float_
 
-            # 3. Retrieve video embeddings
             unique_video_ids = list({c["video_id"] for c in raw_clips})
-            video_segments: dict[str, list] = {}
 
-            for vid in unique_video_ids:
-                try:
-                    detail = client.indexes.videos.retrieve(
-                        index_id=index_id,
-                        video_id=vid,
-                        embedding_option=["visual"],
-                    )
-                    if detail.embedding and detail.embedding.video_embedding:
-                        video_segments[vid] = [
-                            (seg.start_offset_sec, seg.end_offset_sec, seg.float_)
-                            for seg in detail.embedding.video_embedding.segments
-                            if seg.float_
-                        ]
-                except Exception:
-                    pass
+            from app.services.embedding_cache import fetch_many
+            video_segments = fetch_many(client, index_id, unique_video_ids)
+            timing["embedding"] = time.monotonic() - t1
 
-            # 4. Compute cosine similarity
+            # 3. Compute cosine similarity
+            t2 = time.monotonic()
             for clip in raw_clips:
                 vid = clip["video_id"]
                 segments = video_segments.get(vid, [])
@@ -217,18 +210,19 @@ class HighlightsSearchWorker(QThread):
                         best_sim = max(best_sim, sim)
                 clip["score"] = best_sim
 
-            # 5. Normalize to 0-100 before merge (so _score_to_level works)
+            # 4. Normalize to 0-100 before merge (so _score_to_level works)
             max_score = max((c["score"] for c in raw_clips), default=0.0)
             if max_score > 0:
                 for clip in raw_clips:
                     clip["score"] = round((clip["score"] / max_score) * 100, 1)
 
-            # 6. Merge adjacent clips, then re-normalize
+            # 5. Merge adjacent clips, then re-normalize
             merged = _merge_adjacent_clips(raw_clips)
             max_merged = max((c["score"] for c in merged), default=0.0)
             if max_merged > 0:
                 for clip in merged:
                     clip["score"] = round((clip["score"] / max_merged) * 100, 1)
+            timing["scoring"] = time.monotonic() - t2
 
             # Add source and category info
             source = "category" if self.category else "search"
@@ -237,7 +231,7 @@ class HighlightsSearchWorker(QThread):
                 clip["category"] = self.category or ""
                 clip["title"] = ""  # Search results don't have titles
 
-            self.results.emit(merged)
+            self.results.emit(merged, timing)
 
         except Exception as e:
             self.error.emit(str(e))

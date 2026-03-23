@@ -3,24 +3,32 @@ from pathlib import Path
 
 
 def extract_thumbnail(video_path: Path, output_path: Path, time_sec: float = 1.0) -> bool:
-    """Extract a single frame from video as a JPEG thumbnail."""
+    """Extract a single frame from video as a JPEG thumbnail.
+
+    If extraction at the given time fails, retries at a few fallback offsets.
+    """
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        subprocess.run(
-            [
-                "ffmpeg", "-y", "-ss", str(time_sec),
-                "-i", str(video_path),
-                "-frames:v", "1",
-                "-q:v", "3",
-                str(output_path),
-            ],
-            capture_output=True,
-            timeout=30,
-            check=True,
-        )
-        return output_path.exists()
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-        return False
+
+    attempts = [time_sec, time_sec + 1.0, time_sec + 2.0, 0.5]
+    for t in attempts:
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-ss", str(max(t, 0)),
+                    "-i", str(video_path),
+                    "-frames:v", "1",
+                    "-q:v", "3",
+                    str(output_path),
+                ],
+                capture_output=True,
+                timeout=30,
+                check=True,
+            )
+            if output_path.exists() and output_path.stat().st_size > 0:
+                return True
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+            continue
+    return False
 
 
 def probe_video(video_path: Path) -> dict:

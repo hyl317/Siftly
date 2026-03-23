@@ -40,7 +40,7 @@ Three ways to find clips:
 - **Python** >= 3.8
 - **ffmpeg** / **ffprobe**
 - [Twelve Labs API key](https://dashboard.twelvelabs.io/)
-- **DaVinci Resolve** (optional, needs to be running for project creation)
+- **DaVinci Resolve Studio** (optional, needs to be running for project creation — the free version does not include the scripting API)
 
 ## Install
 
@@ -131,7 +131,7 @@ python run.py
 - **Python** >= 3.8
 - **ffmpeg** / **ffprobe**
 - [Twelve Labs API key](https://dashboard.twelvelabs.io/)
-- **DaVinci Resolve**（可选，要用达芬奇集成的话需要开着）
+- **DaVinci Resolve Studio**（可选，要用达芬奇集成的话需要开着——免费版不支持脚本 API）
 
 ## 装起来
 

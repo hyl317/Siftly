@@ -1,18 +1,70 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel, QLineEdit,
-    QMenu, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
+    QListView, QMenu, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from app.services.api_client import get_client
-from app.config import get_index_id
+from app.config import get_anthropic_api_key, get_index_id, get_vision_model
 from app.services.highlights_worker import (
     CATEGORY_QUERIES, HighlightsAnalyzeWorker, HighlightsSearchWorker,
 )
 from app.widgets.highlight_card import HighlightCard
+
+
+class _RefineQueryWorker(QThread):
+    """Sends a rough query to Claude and gets a polished version back."""
+    result = Signal(str)   # refined query
+    error = Signal(str)
+
+    def __init__(self, query: str, parent=None):
+        super().__init__(parent)
+        self.query = query
+
+    def run(self):
+        try:
+            import anthropic
+            api_key = get_anthropic_api_key()
+            if not api_key:
+                self.error.emit("Anthropic API key not set. Add it in Settings.")
+                return
+
+            client = anthropic.Anthropic(api_key=api_key)
+            response = client.messages.create(
+                model=get_vision_model(),
+                max_tokens=256,
+                system=(
+                    "You refine rough video search queries into precise, descriptive "
+                    "queries optimized for video retrieval. The user enters a few keywords "
+                    "or a rough description; you return a single polished query that would "
+                    "match specific visual and audio content in video footage.\n\n"
+                    "Rules:\n"
+                    "- Output ONLY the refined query, nothing else — no explanation, "
+                    "no quotes, no preamble\n"
+                    "- Expand vague keywords into concrete visual descriptions\n"
+                    "- Describe what the camera would SEE and HEAR\n"
+                    "- Keep it to 1-2 sentences\n"
+                    "- Preserve the user's intent — don't add unrelated content\n\n"
+                    "Examples:\n"
+                    "User: alpine, rock, ridge line\n"
+                    "Refined: Hikers traversing a narrow rocky ridge line in alpine "
+                    "terrain with exposed mountain peaks and clear sky\n\n"
+                    "User: bird water\n"
+                    "Refined: A bird wading or diving into shallow water, splashing "
+                    "and catching fish\n\n"
+                    "User: sunset beach\n"
+                    "Refined: Golden sunset light over a sandy beach with waves "
+                    "rolling onto the shore"
+                ),
+                messages=[{"role": "user", "content": self.query}],
+            )
+            refined = response.content[0].text.strip()
+            self.result.emit(refined)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class HighlightsView(QWidget):
@@ -40,6 +92,7 @@ class HighlightsView(QWidget):
         header.addStretch()
 
         self.scope_combo = QComboBox()
+        self.scope_combo.setView(QListView())
         self.scope_combo.setFixedWidth(180)
         self.scope_combo.setToolTip("Scope: which videos to analyze")
         header.addWidget(self.scope_combo)
@@ -89,9 +142,13 @@ class HighlightsView(QWidget):
             lambda pos: self._show_edit_menu(self.search_input, pos)
         )
         self.search_input.returnPressed.connect(self._start_search)
+        self.refine_btn = QPushButton("Refine with AI")
+        self.refine_btn.setToolTip("Use AI to expand your query into a more detailed video search")
+        self.refine_btn.clicked.connect(self._refine_query)
         self.search_btn = QPushButton("Search")
         self.search_btn.clicked.connect(self._start_search)
         search_layout.addWidget(self.search_input, stretch=1)
+        search_layout.addWidget(self.refine_btn)
         search_layout.addWidget(self.search_btn)
         self.input_stack.addWidget(search_panel)  # index 1
 
@@ -162,6 +219,7 @@ class HighlightsView(QWidget):
         export_layout.addStretch()
 
         self.export_mode_combo = QComboBox()
+        self.export_mode_combo.setView(QListView())
         self.export_mode_combo.addItems([
             "Create DaVinci Project",
             "Append to DaVinci Timeline",
@@ -293,6 +351,34 @@ class HighlightsView(QWidget):
 
     # ── Custom search ─────────────────────────────────────────────────
 
+    def _refine_query(self):
+        query = self.search_input.text().strip()
+        if not query:
+            return
+        self.refine_btn.setEnabled(False)
+        self.refine_btn.setText("Refining...")
+        self.status_label.setText("")
+
+        worker = _RefineQueryWorker(query, self)
+        worker.result.connect(self._on_refine_done)
+        worker.error.connect(self._on_refine_error)
+        # prevent garbage collection
+        self._refine_worker = worker
+        worker.start()
+
+    def _on_refine_done(self, refined: str):
+        self.search_input.setText(refined)
+        self.refine_btn.setEnabled(True)
+        self.refine_btn.setText("Refine with AI")
+        self.status_label.setText("Query refined — review and hit Search")
+        self.status_label.setStyleSheet("color: #64ffda; font-size: 12px;")
+
+    def _on_refine_error(self, msg: str):
+        self.refine_btn.setEnabled(True)
+        self.refine_btn.setText("Refine with AI")
+        self.status_label.setText(f"Refine failed: {msg}")
+        self.status_label.setStyleSheet("color: #e74c3c; font-size: 12px;")
+
     def _start_search(self):
         query = self.search_input.text().strip()
         if not query:
@@ -324,12 +410,24 @@ class HighlightsView(QWidget):
         self._search_worker.error.connect(self._on_search_error)
         self._search_worker.start()
 
-    def _on_search_results(self, items: list):
+    def _on_search_results(self, items: list, timing: dict = None):
         self.search_btn.setEnabled(True)
         n_videos = len({r["video_id"] for r in items})
-        self.status_label.setText(
-            f"Found {len(items)} highlights across {n_videos} videos"
-        )
+
+        if timing:
+            total = sum(timing.values())
+            search_t = timing.get("search", 0)
+            embed_t = timing.get("embedding", 0)
+            score_t = timing.get("scoring", 0)
+            self.status_label.setText(
+                f"Found {len(items)} highlights across {n_videos} videos "
+                f"in {total:.1f}s "
+                f"(search {search_t:.1f}s + embedding {embed_t:.1f}s + scoring {score_t:.2f}s)"
+            )
+        else:
+            self.status_label.setText(
+                f"Found {len(items)} highlights across {n_videos} videos"
+            )
         self.status_label.setStyleSheet("color: #888; font-size: 12px;")
         for item in items:
             self._add_card(item)

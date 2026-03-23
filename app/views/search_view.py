@@ -3,7 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QComboBox, QHBoxLayout, QLabel, QLineEdit, QListView, QPushButton,
     QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QHeaderView,
 )
 
@@ -49,6 +49,7 @@ class SearchView(QWidget):
         self.search_input.returnPressed.connect(self._search)
 
         self.threshold_combo = QComboBox()
+        self.threshold_combo.setView(QListView())
         self.threshold_combo.addItem("All results", "none")
         self.threshold_combo.addItem("Low+", "low")
         self.threshold_combo.addItem("Medium+", "medium")

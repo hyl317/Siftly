@@ -1,7 +1,7 @@
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
-    QMessageBox, QPushButton, QVBoxLayout,
+    QListView, QMessageBox, QPushButton, QVBoxLayout,
 )
 
 from app.config import (
@@ -29,6 +29,38 @@ class _LoadIndexesWorker(QThread):
             indexes = client.indexes.list(page=1, page_limit=50)
             items = [{"id": idx.id, "name": idx.index_name or idx.id} for idx in indexes]
             self.result.emit(items)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class _BuildCacheWorker(QThread):
+    progress = Signal(int, int)  # current, total
+    done = Signal(int)           # total cached
+    error = Signal(str)
+
+    def __init__(self, index_id: str, parent=None):
+        super().__init__(parent)
+        self.index_id = index_id
+
+    def run(self):
+        try:
+            from app.services.embedding_cache import build_full_cache
+            client = get_client()
+            # Get all video IDs in this index (paginate with max 50 per page)
+            video_ids = []
+            for video in client.indexes.videos.list(self.index_id, page_limit=50):
+                video_ids.append(video.id)
+
+            if not video_ids:
+                self.done.emit(0)
+                return
+
+            def on_progress(current, total):
+                self.progress.emit(current, total)
+
+            build_full_cache(client, self.index_id, video_ids,
+                             progress_callback=on_progress)
+            self.done.emit(len(video_ids))
         except Exception as e:
             self.error.emit(str(e))
 
@@ -67,7 +99,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None, force_modal=False):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(450)
+        self.setMinimumWidth(600)
         if force_modal:
             self.setWindowFlags(self.windowFlags() & ~Qt.WindowType.WindowCloseButtonHint)
 
@@ -118,6 +150,7 @@ class SettingsDialog(QDialog):
         # Vision model selector
         layout.addWidget(QLabel("Vision Model"))
         self.model_combo = QComboBox()
+        self.model_combo.setView(QListView())
         for model_id, label in VISION_MODELS.items():
             self.model_combo.addItem(label, model_id)
         layout.addWidget(self.model_combo)
@@ -127,12 +160,22 @@ class SettingsDialog(QDialog):
         # Index section
         layout.addWidget(QLabel("Index"))
         self.index_combo = QComboBox()
+        self.index_combo.setView(QListView())
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.setFixedWidth(80)
         self.refresh_btn.clicked.connect(self._load_indexes)
         idx_row = QHBoxLayout()
+        self.build_cache_btn = QPushButton("Build Cache")
+        self.build_cache_btn.setFixedWidth(100)
+        self.build_cache_btn.setToolTip("Pre-fetch all video embeddings for faster search")
+        self.build_cache_btn.clicked.connect(self._build_embedding_cache)
+        self.clear_cache_btn = QPushButton("Clear Cache")
+        self.clear_cache_btn.setFixedWidth(100)
+        self.clear_cache_btn.clicked.connect(self._clear_embedding_cache)
         idx_row.addWidget(self.index_combo, stretch=1)
         idx_row.addWidget(self.refresh_btn)
+        idx_row.addWidget(self.build_cache_btn)
+        idx_row.addWidget(self.clear_cache_btn)
         layout.addLayout(idx_row)
 
         # Create new index
@@ -258,6 +301,55 @@ class SettingsDialog(QDialog):
         self.create_btn.setEnabled(True)
         self.create_btn.setText("Create")
         QMessageBox.warning(self, "Error", f"Failed to create index:\n{msg}")
+
+    def _build_embedding_cache(self):
+        index_id = self.index_combo.currentData()
+        if not index_id:
+            return
+        self.build_cache_btn.setEnabled(False)
+        self.build_cache_btn.setText("Building...")
+
+        worker = _BuildCacheWorker(index_id, self)
+        worker.progress.connect(self._on_cache_build_progress)
+        worker.done.connect(self._on_cache_build_done)
+        worker.error.connect(self._on_cache_build_error)
+        self._workers.append(worker)
+        worker.start()
+
+    def _on_cache_build_progress(self, current: int, total: int):
+        self.build_cache_btn.setText(f"{current}/{total}")
+
+    def _on_cache_build_done(self, count: int):
+        self.build_cache_btn.setEnabled(True)
+        self.build_cache_btn.setText("Build Cache")
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Cache Built")
+        msg.setText(f"Cached embeddings for {count} videos.")
+        msg.setIcon(QMessageBox.Icon.NoIcon)
+        msg.exec()
+
+    def _on_cache_build_error(self, msg: str):
+        self.build_cache_btn.setEnabled(True)
+        self.build_cache_btn.setText("Build Cache")
+        QMessageBox.warning(self, "Error", f"Cache build failed:\n{msg}")
+
+    def _clear_embedding_cache(self):
+        index_id = self.index_combo.currentData()
+        if not index_id:
+            return
+        from app.services.embedding_cache import get_cache_size, clear_cache
+        size = get_cache_size(index_id)
+        if size == 0:
+            QMessageBox.information(self, "No Cache", "No cached embeddings for this index.")
+            return
+        size_mb = size / (1024 * 1024)
+        reply = QMessageBox.question(
+            self, "Clear Cache",
+            f"Delete {size_mb:.1f} MB of cached embeddings for this index?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            clear_cache(index_id)
 
     def _save(self):
         key = self.key_input.text().strip()

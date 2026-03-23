@@ -2,8 +2,8 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QInputDialog, QLabel, QMainWindow, QMessageBox,
-    QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
+    QComboBox, QHBoxLayout, QInputDialog, QLabel, QListView, QMainWindow,
+    QMessageBox, QPushButton, QSplitter, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from app.config import get_api_key, get_index_id, set_index_id
@@ -139,6 +139,7 @@ class MainWindow(QMainWindow):
         header_layout.addStretch()
         header_layout.addWidget(QLabel("Index:"))
         self.index_combo = QComboBox()
+        self.index_combo.setView(QListView())  # Force Qt-styled dropdown instead of native macOS popup
         self.index_combo.setFixedWidth(220)
         self.index_combo.currentIndexChanged.connect(self._on_index_changed)
         header_layout.addWidget(self.index_combo)
@@ -276,7 +277,9 @@ class MainWindow(QMainWindow):
             self.stack.setCurrentIndex(4)
         elif key == "settings":
             self._show_settings()
-            # Stay on current page after settings
+            # Restore previous button state since settings is a dialog, not a page
+            for k, btn in self.nav_buttons.items():
+                btn.setChecked(k == self._last_nav)
             return
 
         self._last_nav = key
