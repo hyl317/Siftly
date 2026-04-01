@@ -36,6 +36,20 @@ def set_anthropic_api_key(key: str):
     os.environ["ANTHROPIC_API_KEY"] = key
 
 
+MANUAL_INDEX_DIR = PROJECT_ROOT / ".davinci_manual"
+
+
+def get_voyage_api_key() -> str:
+    return os.getenv("VOYAGE_API_KEY", "")
+
+
+def set_voyage_api_key(key: str):
+    if not ENV_PATH.exists():
+        ENV_PATH.touch()
+    set_key(str(ENV_PATH), "VOYAGE_API_KEY", key)
+    os.environ["VOYAGE_API_KEY"] = key
+
+
 VISION_MODELS = {
     "claude-opus-4-6": "Opus 4.6 — most accurate, ~$0.15/run",
     "claude-sonnet-4-6": "Sonnet 4.6 — balanced, ~$0.03/run",

@@ -53,8 +53,10 @@ def export_otio(highlights: list[dict], output_path: str) -> tuple[int, int]:
     Returns (exported_count, skipped_count).
     """
     timeline = otio.schema.Timeline(name="Highlights")
-    track = otio.schema.Track(name="V1")
-    timeline.tracks.append(track)
+    video_track = otio.schema.Track(name="V1", kind=otio.schema.TrackKind.Video)
+    audio_track = otio.schema.Track(name="A1", kind=otio.schema.TrackKind.Audio)
+    timeline.tracks.append(video_track)
+    timeline.tracks.append(audio_track)
 
     # Cache probe info per video file to avoid repeated ffprobe calls
     probe_cache: dict[str, dict] = {}
@@ -99,13 +101,26 @@ def export_otio(highlights: list[dict], output_path: str) -> tuple[int, int]:
             start_time=otio.opentime.RationalTime((start_tc_sec + start_sec) * fps, fps),
             duration=otio.opentime.RationalTime(duration_sec * fps, fps),
         )
-        clip = otio.schema.Clip(
+        video_clip = otio.schema.Clip(
             name=filename,
             media_reference=media_ref,
             source_range=source_range,
         )
-        track.append(clip)
+        video_track.append(video_clip)
 
-    exported = len(track)
+        # Add matching audio clip referencing the same source
+        audio_ref = otio.schema.ExternalReference(
+            target_url=local_path,
+            available_range=available_range,
+        )
+        audio_ref.name = filename
+        audio_clip = otio.schema.Clip(
+            name=filename,
+            media_reference=audio_ref,
+            source_range=source_range,
+        )
+        audio_track.append(audio_clip)
+
+    exported = len(video_track)
     otio.adapters.write_to_file(timeline, output_path)
     return exported, skipped

@@ -238,7 +238,7 @@ class FolderBrowser(QWidget):
         self.check_all = QCheckBox("Select All")
         self.check_all.stateChanged.connect(self._toggle_all)
         self.clear_btn = QPushButton("Clear")
-        self.clear_btn.setFixedWidth(60)
+        self.clear_btn.setMinimumWidth(60)
         self.clear_btn.clicked.connect(self._clear_list)
 
         set_all_label = QLabel("Color Profile:")

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
@@ -7,7 +9,9 @@ from PySide6.QtWidgets import (
 from app.config import (
     VISION_MODELS,
     get_api_key, get_anthropic_api_key, get_index_id, get_vision_model,
+    get_voyage_api_key,
     set_api_key, set_anthropic_api_key, set_index_id, set_vision_model,
+    set_voyage_api_key,
 )
 from app.services.api_client import get_client, reset_client, test_connection
 
@@ -118,7 +122,7 @@ class SettingsDialog(QDialog):
         self.key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.key_input.setPlaceholderText("Enter your Twelve Labs API key")
         self.toggle_btn = QPushButton("Show")
-        self.toggle_btn.setFixedWidth(70)
+        self.toggle_btn.setMinimumWidth(70)
         self.toggle_btn.clicked.connect(self._toggle_visibility)
         key_row.addWidget(self.key_input)
         key_row.addWidget(self.toggle_btn)
@@ -141,11 +145,26 @@ class SettingsDialog(QDialog):
         self.anthropic_key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.anthropic_key_input.setPlaceholderText("Enter your Anthropic API key")
         self.anthropic_toggle_btn = QPushButton("Show")
-        self.anthropic_toggle_btn.setFixedWidth(70)
+        self.anthropic_toggle_btn.setMinimumWidth(70)
         self.anthropic_toggle_btn.clicked.connect(self._toggle_anthropic_visibility)
         anthropic_row.addWidget(self.anthropic_key_input)
         anthropic_row.addWidget(self.anthropic_toggle_btn)
         layout.addLayout(anthropic_row)
+
+        # Voyage AI API Key section (for manual RAG)
+        layout.addWidget(QLabel("Voyage AI API Key (for Manual Search)"))
+        voyage_row = QHBoxLayout()
+        self.voyage_key_input = QLineEdit()
+        self.voyage_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.voyage_key_input.setPlaceholderText("Enter your Voyage AI API key")
+        self.voyage_toggle_btn = QPushButton("Show")
+        self.voyage_toggle_btn.setMinimumWidth(70)
+        self.voyage_toggle_btn.clicked.connect(self._toggle_voyage_visibility)
+        voyage_row.addWidget(self.voyage_key_input)
+        voyage_row.addWidget(self.voyage_toggle_btn)
+        layout.addLayout(voyage_row)
+
+        layout.addSpacing(16)
 
         # Vision model selector
         layout.addWidget(QLabel("Vision Model"))
@@ -157,20 +176,35 @@ class SettingsDialog(QDialog):
 
         layout.addSpacing(16)
 
+        # DaVinci Manual section
+        layout.addWidget(QLabel("DaVinci Resolve Manual (for Assistant)"))
+        manual_row = QHBoxLayout()
+        self.manual_status = QLabel("")
+        self.manual_status.setStyleSheet("font-size: 11px; color: #888;")
+        self.load_manual_btn = QPushButton("Load Manual PDFs...")
+        self.load_manual_btn.setMinimumWidth(150)
+        self.load_manual_btn.clicked.connect(self._load_manual)
+        manual_row.addWidget(self.manual_status, stretch=1)
+        manual_row.addWidget(self.load_manual_btn)
+        layout.addLayout(manual_row)
+        self._update_manual_status()
+
+        layout.addSpacing(16)
+
         # Index section
         layout.addWidget(QLabel("Index"))
         self.index_combo = QComboBox()
         self.index_combo.setView(QListView())
         self.refresh_btn = QPushButton("Refresh")
-        self.refresh_btn.setFixedWidth(80)
+        self.refresh_btn.setMinimumWidth(80)
         self.refresh_btn.clicked.connect(self._load_indexes)
         idx_row = QHBoxLayout()
         self.build_cache_btn = QPushButton("Build Cache")
-        self.build_cache_btn.setFixedWidth(100)
+        self.build_cache_btn.setMinimumWidth(100)
         self.build_cache_btn.setToolTip("Pre-fetch all video embeddings for faster search")
         self.build_cache_btn.clicked.connect(self._build_embedding_cache)
         self.clear_cache_btn = QPushButton("Clear Cache")
-        self.clear_cache_btn.setFixedWidth(100)
+        self.clear_cache_btn.setMinimumWidth(100)
         self.clear_cache_btn.clicked.connect(self._clear_embedding_cache)
         idx_row.addWidget(self.index_combo, stretch=1)
         idx_row.addWidget(self.refresh_btn)
@@ -202,9 +236,18 @@ class SettingsDialog(QDialog):
         btn_row.addWidget(self.save_btn)
         layout.addLayout(btn_row)
 
+    def _toggle_voyage_visibility(self):
+        if self.voyage_key_input.echoMode() == QLineEdit.EchoMode.Password:
+            self.voyage_key_input.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.voyage_toggle_btn.setText("Hide")
+        else:
+            self.voyage_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+            self.voyage_toggle_btn.setText("Show")
+
     def _load_current(self):
         self.key_input.setText(get_api_key())
         self.anthropic_key_input.setText(get_anthropic_api_key())
+        self.voyage_key_input.setText(get_voyage_api_key())
         # Select saved vision model
         current_model = get_vision_model()
         for i in range(self.model_combo.count()):
@@ -351,6 +394,88 @@ class SettingsDialog(QDialog):
         if reply == QMessageBox.StandardButton.Yes:
             clear_cache(index_id)
 
+    def _update_manual_status(self):
+        try:
+            from app.services.knowledge_base import get_status
+            status = get_status()
+            if status["texts_loaded"]:
+                n = status["num_texts"]
+                pdfs = ", ".join(status.get("manuals", []))
+                self.manual_status.setText(f"Ready — {n} chunks from {pdfs}")
+                self.manual_status.setStyleSheet("font-size: 11px; color: #27ae60;")
+            elif status["has_index"]:
+                self.manual_status.setText("Index available — load PDF to enable")
+                self.manual_status.setStyleSheet("font-size: 11px; color: #f0ad4e;")
+            else:
+                self.manual_status.setText("No index found")
+                self.manual_status.setStyleSheet("font-size: 11px; color: #888;")
+        except Exception:
+            self.manual_status.setText("Not configured")
+            self.manual_status.setStyleSheet("font-size: 11px; color: #888;")
+
+    def _load_manual(self):
+        from PySide6.QtWidgets import QFileDialog
+        from app.services.knowledge_base import validate_pdf, _load_manifest
+
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Select DaVinci Resolve Manual PDFs", "", "PDF Files (*.pdf)"
+        )
+        if not paths:
+            return
+
+        # Validate each PDF
+        valid_paths = []
+        for path in paths:
+            ok, msg = validate_pdf(path)
+            if ok:
+                valid_paths.append(path)
+            else:
+                manifest = _load_manifest()
+                expected = ", ".join(m["filename"] for m in manifest.get("manuals", [])) if manifest else "?"
+                QMessageBox.warning(
+                    self, "Wrong PDF",
+                    f"{Path(path).name} doesn't match the expected manual.\n\n"
+                    f"Expected: {expected}\n\n"
+                    f"Download the correct version from blackmagicdesign.com",
+                )
+                return
+
+        if not valid_paths:
+            return
+
+        self.load_manual_btn.setEnabled(False)
+        self.load_manual_btn.setText("Extracting...")
+        self.manual_status.setText("Extracting text and images...")
+        self.manual_status.setStyleSheet("font-size: 11px; color: #888;")
+
+        from app.services.manual_ingest_worker import ManualTextExtractWorker
+        worker = ManualTextExtractWorker(valid_paths, self)
+        worker.progress.connect(self._on_manual_progress)
+        worker.done.connect(self._on_manual_done)
+        worker.error.connect(self._on_manual_error)
+        self._workers.append(worker)
+        worker.start()
+
+    def _on_manual_progress(self, current: int, total: int):
+        self.load_manual_btn.setText(f"{current}/{total}")
+
+    def _on_manual_done(self, aligned: int):
+        self.load_manual_btn.setEnabled(True)
+        self.load_manual_btn.setText("Load Manual PDFs...")
+        self._update_manual_status()
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Manual Loaded")
+        msg.setText(f"Extracted and aligned {aligned} chunks.\nThe Assistant can now reference the manual.")
+        msg.setIcon(QMessageBox.Icon.NoIcon)
+        msg.exec()
+
+    def _on_manual_error(self, error_msg: str):
+        self.load_manual_btn.setEnabled(True)
+        self.load_manual_btn.setText("Load Manual PDFs...")
+        self.manual_status.setText(f"Error: {error_msg[:50]}")
+        self.manual_status.setStyleSheet("font-size: 11px; color: #e74c3c;")
+        QMessageBox.warning(self, "Error", f"Manual loading failed:\n{error_msg}")
+
     def _save(self):
         key = self.key_input.text().strip()
         if key:
@@ -359,6 +484,9 @@ class SettingsDialog(QDialog):
         anthropic_key = self.anthropic_key_input.text().strip()
         if anthropic_key:
             set_anthropic_api_key(anthropic_key)
+        voyage_key = self.voyage_key_input.text().strip()
+        if voyage_key:
+            set_voyage_api_key(voyage_key)
         model_id = self.model_combo.currentData()
         if model_id:
             set_vision_model(model_id)

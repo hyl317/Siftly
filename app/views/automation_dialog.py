@@ -78,7 +78,7 @@ class _TaskCard(QWidget):
         layout.addWidget(desc_label)
 
         self.run_btn = QPushButton("Run")
-        self.run_btn.setFixedWidth(80)
+        self.run_btn.setMinimumWidth(80)
         self.run_btn.clicked.connect(lambda: self.run_requested.emit(self.task_name))
         layout.addWidget(self.run_btn, alignment=Qt.AlignmentFlag.AlignRight)
 

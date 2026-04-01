@@ -1,0 +1,16 @@
+{
+  "manuals": [
+    {
+      "filename": "DaVinci-Resolve-20_Beginners-Guide.pdf",
+      "sha256": "6d0431447846c58b608c1e8e39190668e56ea1e5e40019c268b4566ceb1be208"
+    },
+    {
+      "filename": "DaVinci_Resolve_20_Reference_Manual.pdf",
+      "sha256": "1e4b76b52f637bb3d704342f3788d4506d92055af8075a22ccc4460ba72ad457"
+    }
+  ],
+  "embedding_model": "voyage-3",
+  "embedding_dim": 1024,
+  "num_chunks": 20803,
+  "created": "2026-03-25"
+}

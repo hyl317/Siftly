@@ -6,6 +6,7 @@ __pycache__/
 .video_paths.json
 .prep/
 .embeddings_cache/
+.davinci_manual/
 .claude/
 
 # Non-distributable LUTs (license restricts redistribution)

@@ -81,7 +81,7 @@ class DaVinciProjectDialog(QDialog):
     def __init__(self, highlights: list[dict], export_fn, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Create DaVinci Resolve Project")
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(720)
         self._highlights = highlights
         self._export_fn = export_fn  # callable(highlights, path) -> (exported, skipped)
         self._worker: _DaVinciCreateWorker | None = None
@@ -99,6 +99,7 @@ class DaVinciProjectDialog(QDialog):
 
         # Form
         form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
         self.name_input = QLineEdit()
         self.name_input.setPlaceholderText("My Project")
@@ -154,6 +155,7 @@ class DaVinciProjectDialog(QDialog):
         layout.addWidget(folders_label)
 
         folders_form = QFormLayout()
+        folders_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self._folder_inputs: dict[str, QLineEdit] = {}
         for key, label in [
             ("projectMediaLocation", "Project media:"),
@@ -164,7 +166,7 @@ class DaVinciProjectDialog(QDialog):
             line = QLineEdit()
             line.setPlaceholderText("(Resolve default)")
             browse_btn = QPushButton("Browse")
-            browse_btn.setFixedWidth(80)
+            browse_btn.setMinimumWidth(80)
             browse_btn.clicked.connect(
                 lambda checked, le=line: le.setText(
                     QFileDialog.getExistingDirectory(self, "Select Folder", le.text()) or le.text()
@@ -369,7 +371,7 @@ class DaVinciAppendDialog(QDialog):
     def __init__(self, highlights: list[dict], parent=None):
         super().__init__(parent)
         self.setWindowTitle("Append to DaVinci Resolve Timeline")
-        self.setMinimumWidth(560)
+        self.setMinimumWidth(640)
         self._highlights = highlights
         self._workers: list = []
         self._setup_ui()

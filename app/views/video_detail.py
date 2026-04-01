@@ -349,7 +349,7 @@ class VideoDetailView(QWidget):
         header = QHBoxLayout()
         self.back_btn = QPushButton("< Back")
         self.back_btn.clicked.connect(self._on_back)
-        self.back_btn.setFixedWidth(80)
+        self.back_btn.setMinimumWidth(80)
         self.title_label = QLabel("")
         self.title_label.setStyleSheet("font-size: 16px; font-weight: bold;")
         header.addWidget(self.back_btn)

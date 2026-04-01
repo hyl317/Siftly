@@ -6,3 +6,6 @@ anthropic>=0.39.0
 pyautogui>=0.9.54
 pyobjc-framework-Quartz
 Pillow>=10.0
+voyageai>=0.3
+pypdf>=4.0
+faiss-cpu>=1.8
