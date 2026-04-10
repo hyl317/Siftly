@@ -9,3 +9,5 @@ Pillow>=10.0
 voyageai>=0.3
 pypdf>=4.0
 faiss-cpu>=1.8
+Markdown>=3.5
+pytest>=8.0

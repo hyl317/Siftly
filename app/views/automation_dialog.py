@@ -25,9 +25,9 @@ class _PermissionCheckWorker(QThread):
 
 
 class _AutomationWorker(QThread):
-    """Runs automation steps in a background thread."""
-    step_progress = Signal(str, str, str)  # step_name, status, message
-    finished_ok = Signal(list)  # list of StepResult
+    """Runs an automation task in a background thread."""
+    step_progress = Signal(str, str)  # status, detail
+    finished_ok = Signal(str)  # summary text
     error = Signal(str)
 
     def __init__(self, task_name: str, parent=None):
@@ -39,19 +39,19 @@ class _AutomationWorker(QThread):
             from app.automation.engine import AutomationEngine
 
             if self.task_name == "magic_mask":
-                from app.automation.tasks.magic_mask import build_steps
-                steps = build_steps()
+                from app.automation.tasks.magic_mask import TASK_PROMPT
+                task = TASK_PROMPT
             else:
                 self.error.emit(f"Unknown task: {self.task_name}")
                 return
 
             engine = AutomationEngine(
-                on_step_progress=lambda name, status, msg: (
-                    self.step_progress.emit(name, status, msg)
+                on_progress=lambda status, detail: (
+                    self.step_progress.emit(status, detail)
                 ),
             )
-            results = engine.run_steps(steps)
-            self.finished_ok.emit(results)
+            summary = engine.run(task)
+            self.finished_ok.emit(summary)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -193,32 +193,23 @@ class AutomationDialog(QDialog):
         self._workers.append(worker)
         worker.start()
 
-    def _on_step_progress(self, step_name: str, status: str, message: str):
+    def _on_step_progress(self, status: str, detail: str):
         icon = {
-            "running": "▶",
-            "verifying": "🔍",
-            "passed": "✓",
-            "failed": "✗",
-            "retrying": "↻",
+            "starting": "▶",
+            "thinking": "💭",
+            "screenshot": "📷",
+            "action": "⚡",
+            "message": "💬",
+            "done": "✓",
+            "cancelled": "✗",
         }.get(status, "·")
-        self.progress_label.setText(f"{icon} {step_name}: {message}")
+        self.progress_label.setText(f"{icon} {detail}")
 
-    def _on_task_finished(self, results):
+    def _on_task_finished(self, summary: str):
         self._enable_cards()
-        all_passed = all(r.success for r in results)
-        if all_passed:
-            self.status_label.setText("Automation complete")
-            self.status_label.setStyleSheet("color: #27ae60;")
-            self.progress_label.setText(
-                f"All {len(results)} steps completed successfully."
-            )
-        else:
-            failed = next(r for r in results if not r.success)
-            self.status_label.setText("Automation stopped")
-            self.status_label.setStyleSheet("color: #e74c3c;")
-            self.progress_label.setText(
-                f"Failed at '{failed.name}': {failed.message}"
-            )
+        self.status_label.setText("Automation complete")
+        self.status_label.setStyleSheet("color: #27ae60;")
+        self.progress_label.setText(summary)
 
     def _on_task_error(self, msg: str):
         self._enable_cards()

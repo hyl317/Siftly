@@ -1,12 +1,16 @@
 import json
+import logging
 import time
 
 from PySide6.QtCore import QThread, Signal
+from twelvelabs.errors import TooManyRequestsError
 from twelvelabs.types import ResponseFormat
 
 from app.services.api_client import get_client
 from app.services.search_worker import _cosine_similarity, _merge_adjacent_clips
 from app.config import get_index_id
+
+logger = logging.getLogger(__name__)
 
 
 ANALYZE_PROMPT = (
@@ -113,25 +117,23 @@ class HighlightsAnalyzeWorker(QThread):
                 all_highlights.extend(results)
                 self.video_result.emit(vid, results)
 
-            except Exception as e:
-                err_str = str(e)
-                if "429" in err_str:
-                    # Rate limited — wait 5 minutes, checking cancel every second
-                    for remaining in range(300, 0, -1):
-                        if self._cancelled:
-                            break
-                        self.retrying.emit(remaining)
-                        time.sleep(1)
+            except TooManyRequestsError:
+                # Rate limited — wait 5 minutes, checking cancel every second
+                for remaining in range(300, 0, -1):
                     if self._cancelled:
                         break
-                    try:
-                        results = self._analyze_video(client, vid)
-                        all_highlights.extend(results)
-                        self.video_result.emit(vid, results)
-                    except Exception:
-                        pass  # Skip this video on second failure
-                else:
-                    pass  # Skip video on other errors, don't crash
+                    self.retrying.emit(remaining)
+                    time.sleep(1)
+                if self._cancelled:
+                    break
+                try:
+                    results = self._analyze_video(client, vid)
+                    all_highlights.extend(results)
+                    self.video_result.emit(vid, results)
+                except Exception as retry_e:
+                    logger.warning("Video %s failed on retry: %s", vid, retry_e)
+            except Exception as e:
+                logger.warning("Skipping video %s: %s", vid, e)
 
         if not self._cancelled:
             all_highlights.sort(key=lambda h: h["score"], reverse=True)

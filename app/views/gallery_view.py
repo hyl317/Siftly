@@ -27,7 +27,7 @@ class _FetchVideosWorker(QThread):
             if not index_id:
                 self.result.emit([])
                 return
-            videos = client.indexes.videos.list(index_id=index_id, page=1, page_limit=50)
+            videos = client.indexes.videos.list(index_id=index_id)
             path_map = video_map.get_all()
             items = []
             for v in videos:

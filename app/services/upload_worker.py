@@ -7,6 +7,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
+from twelvelabs.errors import TooManyRequestsError
+
 from app.services.api_client import get_client
 from app.config import get_index_id
 from app.utils.video_prep import VideoPrepCancelled, prepare_video, resolve_lut_path
@@ -131,16 +133,18 @@ class UploadWorker(QThread):
                 self.progress.emit(path_str, "Ready", 100)
                 self.finished.emit(path_str, result.video_id or "")
                 return
-            except Exception as e:
-                err_str = str(e)
-                if "429" in err_str and retries < max_retries:
+            except TooManyRequestsError:
+                if retries < max_retries:
                     retries += 1
                     wait = 300  # 5 minutes
                     self.progress.emit(path_str, f"Rate limited, retrying in {wait // 60}min...", -1)
                     time.sleep(wait)
                 else:
-                    self.error.emit(path_str, err_str)
+                    self.error.emit(path_str, "Rate limited — max retries exceeded")
                     return
+            except Exception as e:
+                self.error.emit(path_str, str(e))
+                return
 
     def run(self):
         client = get_client()

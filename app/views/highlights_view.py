@@ -284,12 +284,14 @@ class HighlightsView(QWidget):
             index_id = get_index_id()
             if not index_id:
                 return
-            videos = client.indexes.videos.list(index_id=index_id, page=1, page_limit=50)
+            videos = client.indexes.videos.list(index_id=index_id)
             self._all_video_ids = [v.id for v in videos if v.id]
             self.scope_combo.addItem(f"All videos ({len(self._all_video_ids)})", None)
-        except Exception:
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Failed to load video list: %s", e)
             self._all_video_ids = []
-            self.scope_combo.addItem("All videos (0)", None)
+            self.scope_combo.addItem("Error loading videos", None)
 
     def _get_scoped_ids(self) -> list[str]:
         """Return video IDs based on current scope selection."""

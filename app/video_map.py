@@ -6,10 +6,14 @@ local files for thumbnails and playback.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+import threading
 
 from app.config import PROJECT_ROOT, get_index_id
 
 _MAP_PATH = PROJECT_ROOT / ".video_paths.json"
+_lock = threading.Lock()
 
 
 def _load() -> dict[str, dict]:
@@ -22,13 +26,22 @@ def _load() -> dict[str, dict]:
 
 
 def _save(data: dict):
-    _MAP_PATH.write_text(json.dumps(data, indent=2))
+    text = json.dumps(data, indent=2)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=_MAP_PATH.parent, suffix=".tmp")
+    try:
+        with os.fdopen(tmp_fd, "w") as f:
+            f.write(text)
+        os.replace(tmp_path, _MAP_PATH)
+    except Exception:
+        os.unlink(tmp_path)
+        raise
 
 
 def set_path(video_id: str, local_path: str):
-    data = _load()
-    data[video_id] = {"path": local_path, "index_id": get_index_id()}
-    _save(data)
+    with _lock:
+        data = _load()
+        data[video_id] = {"path": local_path, "index_id": get_index_id()}
+        _save(data)
 
 
 def get_path(video_id: str) -> str | None:
