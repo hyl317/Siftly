@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -13,8 +15,48 @@ from app.services.api_client import get_client
 from app.config import get_index_id
 from app.utils.video_prep import VideoPrepCancelled, prepare_video, resolve_lut_path
 
-MAX_PARALLEL_TRANSCODES = 2
+logger = logging.getLogger(__name__)
+
 MAX_PARALLEL_UPLOADS = 3
+
+
+def _detect_media_engines() -> int:
+    """Detect the number of hardware video encode engines on Apple Silicon.
+
+    Maps chip model to known engine count. Falls back to 1 for unknown chips.
+    Sources: Apple tech specs for M1-M5 series.
+    """
+    # Video encode engine counts per Apple Silicon tier:
+    #   Base (M1-M5):       1 engine
+    #   Pro  (M1-M5 Pro):   1 engine
+    #   Max  (M1-M5 Max):   2 engines
+    #   Ultra (M2-M3):      4 engines
+    try:
+        chip = subprocess.run(
+            ["sysctl", "-n", "machdep.cpu.brand_string"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip().lower()
+    except Exception:
+        return 1
+
+    if "ultra" in chip:
+        return 4
+    if "max" in chip:
+        return 2
+    if "apple m" in chip:
+        return 1
+    return 1
+
+
+def _optimal_parallel_transcodes() -> int:
+    engines = _detect_media_engines()
+    # ~3 concurrent transcodes per engine saturates the pipeline
+    count = engines * 3
+    logger.debug("Detected %d media engine(s), using %d parallel transcodes", engines, count)
+    return count
+
+
+MAX_PARALLEL_TRANSCODES = _optimal_parallel_transcodes()
 
 
 class PrepWorker(QThread):

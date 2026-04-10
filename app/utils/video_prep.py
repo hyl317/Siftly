@@ -318,9 +318,11 @@ def transcode_720p(input_path: Path, lut_path: Path | None = None,
     vf_string = ",".join(vf_parts)
 
     cmd = [
-        "ffmpeg", "-y", "-i", str(input_path),
+        "ffmpeg", "-y",
+        "-hwaccel", "videotoolbox",
+        "-i", str(input_path),
         "-vf", vf_string,
-        "-c:v", "libx264", "-crf", "23", "-preset", "veryfast",
+        "-c:v", "h264_videotoolbox", "-b:v", "3M",
         "-c:a", "aac", "-b:a", "128k",
         str(output_path),
     ]

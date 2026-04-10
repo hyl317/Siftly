@@ -11,10 +11,15 @@ from PySide6.QtWidgets import (
 )
 
 
+SORT_AI_STORYLINE = 2
+
+
 def _sort_clips(clips: list[dict], mode: int) -> list[dict]:
-    """Sort clips by mode: 0 = score descending, 1 = video time chronological."""
+    """Sort clips by mode: 0 = score descending, 1 = chronological, 2 = AI (no-op)."""
     if mode == 1:
         return sorted(clips, key=lambda c: (c.get("video_id", ""), c.get("start", 0.0)))
+    if mode == SORT_AI_STORYLINE:
+        return list(clips)  # already ordered by StorylineWorker
     return sorted(clips, key=lambda c: c.get("score", 0), reverse=True)
 
 
@@ -86,6 +91,7 @@ class DaVinciProjectDialog(QDialog):
         self._export_fn = export_fn  # callable(highlights, path) -> (exported, skipped)
         self._worker: _DaVinciCreateWorker | None = None
         self._check_worker: _ResolveCheckWorker | None = None
+        self._storyline_worker = None
         self._tmp_path: str | None = None
         self._setup_ui()
 
@@ -110,7 +116,11 @@ class DaVinciProjectDialog(QDialog):
 
         self.sort_combo = QComboBox()
         self.sort_combo.setView(QListView())
-        self.sort_combo.addItems(["By Score (highest first)", "By Video Time (chronological)"])
+        self.sort_combo.addItems([
+            "By Score (highest first)",
+            "By Video Time (chronological)",
+            "AI Storyline (auto-arrange)",
+        ])
         self.sort_combo.setEnabled(len(self._highlights) > 1)
         form.addRow("Clip Order:", self.sort_combo)
 
@@ -247,9 +257,39 @@ class DaVinciProjectDialog(QDialog):
             self.status_label.setStyleSheet("color: #e74c3c;")
             return
 
-        # Sort clips
-        sorted_highlights = _sort_clips(self._highlights, self.sort_combo.currentIndex())
+        sort_mode = self.sort_combo.currentIndex()
 
+        # AI Storyline needs async ordering first
+        if sort_mode == SORT_AI_STORYLINE and len(self._highlights) > 1:
+            self.create_btn.setEnabled(False)
+            self.create_btn.setText("Planning storyline...")
+            self.status_label.setStyleSheet("color: #888;")
+            from app.services.storyline_worker import StorylineWorker
+            self._storyline_worker = StorylineWorker(
+                highlights=self._highlights, parent=self,
+            )
+            self._storyline_worker.progress.connect(self._on_storyline_progress)
+            self._storyline_worker.finished.connect(
+                lambda ordered: self._finish_create(name, width, height,
+                                                    sort_mode, ordered))
+            self._storyline_worker.error.connect(self._on_storyline_error)
+            self._storyline_worker.start()
+            return
+
+        sorted_highlights = _sort_clips(self._highlights, sort_mode)
+        self._finish_create(name, width, height, sort_mode, sorted_highlights)
+
+    def _on_storyline_progress(self, status: str):
+        self.status_label.setText(status)
+
+    def _on_storyline_error(self, msg: str):
+        self.create_btn.setEnabled(True)
+        self.create_btn.setText("Create Project")
+        self.status_label.setText(f"AI ordering failed: {msg}")
+        self.status_label.setStyleSheet("color: #e74c3c;")
+
+    def _finish_create(self, name: str, width: int, height: int,
+                       sort_mode: int, sorted_highlights: list):
         # Export OTIO to temp file
         try:
             fd, tmp_path = tempfile.mkstemp(suffix=".otio")
@@ -260,6 +300,8 @@ class DaVinciProjectDialog(QDialog):
             self.status_label.setText(f"OTIO export failed: {e}")
             self.status_label.setStyleSheet("color: #e74c3c;")
             self._cleanup_tmp()
+            self.create_btn.setEnabled(True)
+            self.create_btn.setText("Create Project")
             return
 
         self.create_btn.setEnabled(False)
@@ -374,6 +416,7 @@ class DaVinciAppendDialog(QDialog):
         self.setMinimumWidth(640)
         self._highlights = highlights
         self._workers: list = []
+        self._storyline_worker = None
         self._setup_ui()
 
     def _setup_ui(self):
@@ -405,7 +448,11 @@ class DaVinciAppendDialog(QDialog):
 
         self.sort_combo = QComboBox()
         self.sort_combo.setView(QListView())
-        self.sort_combo.addItems(["By Score (highest first)", "By Video Time (chronological)"])
+        self.sort_combo.addItems([
+            "By Score (highest first)",
+            "By Video Time (chronological)",
+            "AI Storyline (auto-arrange)",
+        ])
         self.sort_combo.setEnabled(len(self._highlights) > 1)
         form.addRow("Clip Order:", self.sort_combo)
 
@@ -494,12 +541,42 @@ class DaVinciAppendDialog(QDialog):
             self.status_label.setStyleSheet("color: #e74c3c;")
             return
 
+        sort_mode = self.sort_combo.currentIndex()
+
+        # AI Storyline needs async ordering first
+        if sort_mode == SORT_AI_STORYLINE and len(self._highlights) > 1:
+            self.append_btn.setEnabled(False)
+            self.append_btn.setText("Planning storyline...")
+            self.status_label.setStyleSheet("color: #888;")
+            from app.services.storyline_worker import StorylineWorker
+            self._storyline_worker = StorylineWorker(
+                highlights=self._highlights, parent=self,
+            )
+            self._storyline_worker.progress.connect(
+                lambda s: self.status_label.setText(s))
+            self._storyline_worker.finished.connect(
+                lambda ordered: self._finish_append(project, timeline, ordered))
+            self._storyline_worker.error.connect(self._on_storyline_error)
+            self._workers.append(self._storyline_worker)
+            self._storyline_worker.start()
+            return
+
+        sorted_highlights = _sort_clips(self._highlights, sort_mode)
+        self._finish_append(project, timeline, sorted_highlights)
+
+    def _on_storyline_error(self, msg: str):
+        self.append_btn.setEnabled(True)
+        self.append_btn.setText("Append Clips")
+        self.status_label.setText(f"AI ordering failed: {msg}")
+        self.status_label.setStyleSheet("color: #e74c3c;")
+
+    def _finish_append(self, project: str, timeline: str,
+                       sorted_highlights: list):
         self.append_btn.setEnabled(False)
         self.append_btn.setText("Appending...")
         self.status_label.setText("Importing media and appending clips...")
         self.status_label.setStyleSheet("color: #888;")
 
-        sorted_highlights = _sort_clips(self._highlights, self.sort_combo.currentIndex())
         worker = _AppendWorker(project, timeline, sorted_highlights, self)
         worker.success.connect(self._on_success)
         worker.error.connect(self._on_error)

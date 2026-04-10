@@ -224,8 +224,9 @@ class HighlightsView(QWidget):
             "Create DaVinci Project",
             "Append to DaVinci Timeline",
             "Export OTIO File",
+            "Reorder DaVinci Timeline",
         ])
-        self.export_mode_combo.setFixedWidth(210)
+        self.export_mode_combo.setMinimumWidth(220)
         self.export_mode_combo.activated.connect(self._on_export)
         export_layout.addWidget(self.export_mode_combo)
 
@@ -489,12 +490,18 @@ class HighlightsView(QWidget):
             card.checkbox.setChecked(score >= threshold)
 
     def _on_export(self):
+        idx = self.export_mode_combo.currentIndex()
+
+        # Reorder dialog doesn't need selected highlights
+        if idx == 3:
+            self._reorder_davinci()
+            return
+
         selected = [c.highlight_data for c in self._get_cards() if c.checkbox.isChecked()]
         if not selected:
             self.status_label.setText("No highlights selected")
             self.status_label.setStyleSheet("color: #888; font-size: 12px;")
             return
-        idx = self.export_mode_combo.currentIndex()
         if idx == 0:
             self._export_davinci(selected)
         elif idx == 1:
@@ -533,4 +540,11 @@ class HighlightsView(QWidget):
         dlg = DaVinciAppendDialog(selected, parent=self)
         if dlg.exec() == DaVinciAppendDialog.DialogCode.Accepted:
             self.status_label.setText("Clips appended to DaVinci Resolve timeline")
+            self.status_label.setStyleSheet("color: #64ffda; font-size: 12px;")
+
+    def _reorder_davinci(self):
+        from app.views.davinci_reorder_dialog import DaVinciReorderDialog
+        dlg = DaVinciReorderDialog(parent=self)
+        if dlg.exec() == DaVinciReorderDialog.DialogCode.Accepted:
+            self.status_label.setText("Reordered timeline created in DaVinci Resolve")
             self.status_label.setStyleSheet("color: #64ffda; font-size: 12px;")

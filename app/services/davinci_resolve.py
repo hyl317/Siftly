@@ -260,3 +260,94 @@ def _collect_pool_items(folder, result: dict):
             result[name] = clip
     for sub in (folder.GetSubFolderList() or []):
         _collect_pool_items(sub, result)
+
+
+def _find_timeline(project, timeline_name: str):
+    """Find a timeline by name in a Resolve project. Raises ValueError if not found."""
+    count = project.GetTimelineCount()
+    for i in range(1, count + 1):
+        tl = project.GetTimelineByIndex(i)
+        if tl and tl.GetName() == timeline_name:
+            return tl
+    raise ValueError(f"Timeline '{timeline_name}' not found.")
+
+
+def read_timeline_clips(project_name: str, timeline_name: str) -> list[dict]:
+    """Read all video clips from a DaVinci Resolve timeline.
+
+    Returns a list of dicts with clip metadata needed for AI reordering
+    and re-appending to a new timeline.
+    """
+    resolve = _get_resolve()
+    pm = resolve.GetProjectManager()
+    project = pm.LoadProject(project_name)
+    if project is None:
+        raise ValueError(f"Could not load project '{project_name}'.")
+
+    timeline = _find_timeline(project, timeline_name)
+
+    fps_raw = project.GetSetting("timelineFrameRate") or 25
+    if isinstance(fps_raw, str):
+        fps = float(fps_raw.replace("DF", "").strip())
+    else:
+        fps = float(fps_raw)
+
+    items = timeline.GetItemListInTrack("video", 1) or []
+
+    clips = []
+    for item in items:
+        mpi = item.GetMediaPoolItem()
+        file_path = ""
+        if mpi:
+            file_path = mpi.GetClipProperty("File Path") or ""
+        clips.append({
+            "clip_name": item.GetName(),
+            "file_path": file_path,
+            "start_frame": item.GetStart(),
+            "end_frame": item.GetEnd(),
+            "duration_frames": item.GetDuration(),
+            "left_offset": item.GetLeftOffset(),
+            "right_offset": item.GetRightOffset(),
+            "fps": fps,
+            "media_pool_item": mpi,
+        })
+    return clips
+
+
+def create_reordered_timeline(
+    project_name: str,
+    new_timeline_name: str,
+    ordered_clips: list[dict],
+) -> int:
+    """Create a new timeline with clips in the specified order.
+
+    ordered_clips should be the reordered output from read_timeline_clips().
+    Returns the number of clips appended.
+    """
+    resolve = _get_resolve()
+    pm = resolve.GetProjectManager()
+    project = pm.LoadProject(project_name)
+    if project is None:
+        raise ValueError(f"Could not load project '{project_name}'.")
+
+    media_pool = project.GetMediaPool()
+    new_tl = media_pool.CreateEmptyTimeline(new_timeline_name)
+    if new_tl is None:
+        raise RuntimeError(f"Could not create timeline '{new_timeline_name}'.")
+
+    project.SetCurrentTimeline(new_tl)
+
+    appended = 0
+    for clip in ordered_clips:
+        mpi = clip.get("media_pool_item")
+        if not mpi:
+            continue
+        result = media_pool.AppendToTimeline([{
+            "mediaPoolItem": mpi,
+            "startFrame": clip["left_offset"],
+            "endFrame": clip["left_offset"] + clip["duration_frames"],
+        }])
+        if result:
+            appended += len(result)
+
+    return appended
