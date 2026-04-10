@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import re
 import logging
+import markdown
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QSize, QTimer
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
-    QCheckBox, QHBoxLayout, QLabel, QPushButton, QScrollArea,
-    QVBoxLayout, QWidget,
+    QCheckBox, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
+    QSizePolicy, QTextBrowser, QVBoxLayout, QWidget,
 )
 
 from app.services.advisor_worker import AdvisorWorker
@@ -26,23 +28,158 @@ _MAX_SCREENSHOT_MESSAGES = 5
 _DO_PATTERN = re.compile(r'\[DO:(\w+)\]')
 _ACTION_PATTERN = re.compile(r'\[ACTION:(\w+)\]\s*(.*?)(?:\n|$)')
 
+_ACTION_NAMES = {
+    "switch_color_page": "Switched to Color page",
+    "toggle_scopes": "Toggled video scopes",
+    "toggle_log_mode": "Switched grading mode",
+    "bypass_grades": "Toggled grade bypass",
+}
 
-class _ChatBubble(QLabel):
+_BUBBLE_VERTICAL_PADDING = 22  # top+bottom padding + border
+
+
+def _strip_tags(text: str) -> str:
+    """Remove [DO:...] and [ACTION:...] tags from display text."""
+    text = _DO_PATTERN.sub('', text)
+    return _ACTION_PATTERN.sub('', text).strip()
+
+
+# Shared CSS for the HTML inside QTextBrowser bubbles
+_MESSAGE_CSS = """
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 0;
+    padding: 0;
+}
+p { margin: 0 0 8px 0; }
+p:last-child { margin-bottom: 0; }
+ul, ol { margin: 4px 0 8px 0; padding-left: 20px; }
+li { margin-bottom: 3px; }
+code {
+    background: rgba(255,255,255,0.08);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: 'SF Mono', 'Menlo', monospace;
+    font-size: 12px;
+}
+pre {
+    background: rgba(0,0,0,0.3);
+    padding: 10px 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 6px 0;
+}
+pre code {
+    background: none;
+    padding: 0;
+}
+strong, b { font-weight: 600; }
+h1, h2, h3, h4 {
+    font-weight: 600;
+    margin: 10px 0 4px 0;
+}
+h3 { font-size: 14px; }
+h4 { font-size: 13px; }
+"""
+
+
+def _md_to_html(text: str, fg_color: str = "#e5e7eb") -> str:
+    """Convert markdown text to styled HTML for QTextBrowser."""
+    html = markdown.markdown(
+        text,
+        extensions=["fenced_code", "nl2br", "sane_lists"],
+    )
+    return (
+        f"<html><head><style>{_MESSAGE_CSS}\n"
+        f"body {{ color: {fg_color}; }}\n"
+        f"</style></head><body>{html}</body></html>"
+    )
+
+
+class _ChatBubble(QTextBrowser):
+    """Auto-sizing rich-text chat message widget."""
+
+    _BUBBLE_BASE = (
+        "QTextBrowser {"
+        "  border-radius: 12px; border: none; padding: 10px 14px;"
+        "  background: %s; color: %s;"
+        "}"
+    )
+
     def __init__(self, text: str, is_user: bool, parent=None):
-        super().__init__(text, parent)
-        self.setWordWrap(True)
-        self.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.setContentsMargins(10, 8, 10, 8)
+        super().__init__(parent)
+        self._is_user = is_user
+        self._fg = "#ffffff" if is_user else "#e5e7eb"
+        bg = "#2563eb" if is_user else "#1e1e2e"
+
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setOpenExternalLinks(True)
+        self.setReadOnly(True)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.setStyleSheet(self._BUBBLE_BASE % (bg, self._fg))
+        self.setHtml(_md_to_html(text, self._fg))
+        self._update_height()
+
+        # Throttle rendering during streaming to avoid per-token markdown parses
+        self._pending_text: str | None = None
+        self._render_timer = QTimer(self)
+        self._render_timer.setSingleShot(True)
+        self._render_timer.setInterval(80)
+        self._render_timer.timeout.connect(self._flush_pending)
+
+    def set_markdown_text(self, text: str):
+        """Queue a markdown render (throttled during streaming)."""
+        self._pending_text = text
+        if not self._render_timer.isActive():
+            self._render_timer.start()
+
+    def set_markdown_text_immediate(self, text: str):
+        """Render markdown immediately (for final text, errors)."""
+        self._pending_text = None
+        self._render_timer.stop()
+        self.setHtml(_md_to_html(text, self._fg))
+        self._update_height()
+
+    def _flush_pending(self):
+        if self._pending_text is not None:
+            text = self._pending_text
+            self._pending_text = None
+            self.setHtml(_md_to_html(text, self._fg))
+            self._update_height()
+
+    def _update_height(self):
+        doc = self.document()
+        doc.setTextWidth(self.viewport().width())
+        h = int(doc.size().height()) + _BUBBLE_VERTICAL_PADDING
+        self.setFixedHeight(max(h, 36))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_height()
+
+
+class _MessageRow(QWidget):
+    """Full-width row containing a chat bubble with proper alignment."""
+
+    def __init__(self, text: str, is_user: bool, parent=None):
+        super().__init__(parent)
+        self.bubble = _ChatBubble(text, is_user)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
         if is_user:
-            self.setStyleSheet(
-                "background: #3b82f6; color: white; border-radius: 10px; "
-                "font-size: 13px; padding: 8px 12px;"
-            )
+            # Right-aligned, capped width
+            layout.addSpacing(80)
+            layout.addWidget(self.bubble, stretch=1)
         else:
-            self.setStyleSheet(
-                "background: #374151; color: #e5e7eb; border-radius: 10px; "
-                "font-size: 13px; padding: 8px 12px;"
-            )
+            # Left-aligned, full width
+            layout.addWidget(self.bubble, stretch=1)
+            layout.addSpacing(40)
 
 
 class _StatusBubble(QLabel):
@@ -71,7 +208,7 @@ class AdvisorView(QWidget):
         super().__init__(parent)
         self._conversation: list[dict] = []
         self._worker: AdvisorWorker | None = None
-        self._current_bubble: _ChatBubble | None = None
+        self._current_row: _MessageRow | None = None
         self._current_text = ""
         self._pending_user_question = ""
         self._setup_ui()
@@ -111,14 +248,13 @@ class AdvisorView(QWidget):
         self.msg_container = QWidget()
         self.msg_layout = QVBoxLayout(self.msg_container)
         self.msg_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.msg_layout.setSpacing(8)
+        self.msg_layout.setSpacing(10)
         self.msg_layout.addStretch()
         self.scroll.setWidget(self.msg_container)
         layout.addWidget(self.scroll, stretch=1)
 
         # Input
         input_row = QHBoxLayout()
-        from PySide6.QtWidgets import QLineEdit
         self.input_field = QLineEdit()
         self.input_field.setPlaceholderText(
             "Ask about your footage — e.g. 'Is my exposure okay?' or 'The colors look too warm'"
@@ -131,15 +267,14 @@ class AdvisorView(QWidget):
         layout.addLayout(input_row)
 
         # Welcome message
-        welcome = _ChatBubble(
+        welcome = _MessageRow(
             "Hi! I can see your DaVinci Resolve window and help with anything — "
             "editing, color grading, audio, effects, exporting, or just figuring "
             "out where things are.\n\n"
             "Make sure DaVinci Resolve is open, then ask away.",
             is_user=False,
         )
-        self.msg_layout.insertWidget(self.msg_layout.count() - 1, welcome,
-                                     alignment=Qt.AlignmentFlag.AlignLeft)
+        self.msg_layout.insertWidget(self.msg_layout.count() - 1, welcome)
 
     def _new_conversation(self):
         self._conversation.clear()
@@ -185,9 +320,8 @@ class AdvisorView(QWidget):
         self._pending_user_question = text
 
         # Add user bubble
-        user_bubble = _ChatBubble(text, is_user=True)
-        self.msg_layout.insertWidget(self.msg_layout.count() - 1, user_bubble,
-                                     alignment=Qt.AlignmentFlag.AlignRight)
+        user_row = _MessageRow(text, is_user=True)
+        self.msg_layout.insertWidget(self.msg_layout.count() - 1, user_row)
 
         # Build user message content
         content: list[dict] = []
@@ -205,9 +339,8 @@ class AdvisorView(QWidget):
 
         # Prepare assistant bubble
         self._current_text = ""
-        self._current_bubble = _ChatBubble("...", is_user=False)
-        self.msg_layout.insertWidget(self.msg_layout.count() - 1, self._current_bubble,
-                                     alignment=Qt.AlignmentFlag.AlignLeft)
+        self._current_row = _MessageRow("...", is_user=False)
+        self.msg_layout.insertWidget(self.msg_layout.count() - 1, self._current_row)
         self._scroll_to_bottom()
 
         # Start streaming
@@ -219,22 +352,18 @@ class AdvisorView(QWidget):
 
     def _on_token(self, token: str):
         self._current_text += token
-        if self._current_bubble:
-            # Strip [DO:...] and [ACTION:...] tags from display
-            display = _DO_PATTERN.sub('', self._current_text)
-            display = _ACTION_PATTERN.sub('', display).strip()
-            self._current_bubble.setText(display or "...")
+        if self._current_row:
+            display = _strip_tags(self._current_text)
+            self._current_row.bubble.set_markdown_text(display or "...")
         self._scroll_to_bottom()
 
     def _on_done(self, full_text: str):
         # Save assistant response to conversation
         self._conversation.append({"role": "assistant", "content": full_text})
 
-        # Clean display text
-        display = _DO_PATTERN.sub('', full_text)
-        display = _ACTION_PATTERN.sub('', display).strip()
-        if self._current_bubble:
-            self._current_bubble.setText(display)
+        display = _strip_tags(full_text)
+        if self._current_row:
+            self._current_row.bubble.set_markdown_text_immediate(display)
 
         # Check for [DO:xxx] auto-actions
         do_actions = _DO_PATTERN.findall(full_text)
@@ -270,15 +399,8 @@ class AdvisorView(QWidget):
             self._enable_input()
             return
 
-        # Show status
-        action_names = {
-            "switch_color_page": "Switched to Color page",
-            "toggle_scopes": "Opened video scopes",
-            "toggle_log_mode": "Switched to Log grading mode",
-            "bypass_grades": "Toggled grade bypass",
-        }
         for aid in executed:
-            status = _StatusBubble(action_names.get(aid, f"Executed {aid}"))
+            status = _StatusBubble(_ACTION_NAMES.get(aid, f"Executed {aid}"))
             self.msg_layout.insertWidget(self.msg_layout.count() - 1, status,
                                          alignment=Qt.AlignmentFlag.AlignLeft)
 
@@ -302,9 +424,8 @@ class AdvisorView(QWidget):
 
         # New assistant bubble for the follow-up
         self._current_text = ""
-        self._current_bubble = _ChatBubble("...", is_user=False)
-        self.msg_layout.insertWidget(self.msg_layout.count() - 1, self._current_bubble,
-                                     alignment=Qt.AlignmentFlag.AlignLeft)
+        self._current_row = _MessageRow("...", is_user=False)
+        self.msg_layout.insertWidget(self.msg_layout.count() - 1, self._current_row)
         self._scroll_to_bottom()
 
         self._worker = AdvisorWorker(list(self._conversation), self)
@@ -317,10 +438,9 @@ class AdvisorView(QWidget):
         """Handle the follow-up response after auto-actions."""
         self._conversation.append({"role": "assistant", "content": full_text})
 
-        display = _DO_PATTERN.sub('', full_text)
-        display = _ACTION_PATTERN.sub('', display).strip()
-        if self._current_bubble:
-            self._current_bubble.setText(display)
+        display = _strip_tags(full_text)
+        if self._current_row:
+            self._current_row.bubble.set_markdown_text_immediate(display)
 
         actions = _ACTION_PATTERN.findall(full_text)
         if actions:
@@ -354,13 +474,7 @@ class AdvisorView(QWidget):
         key, mods = shortcut
         try:
             press_key(key, mods)
-            action_names = {
-                "switch_color_page": "Switched to Color page",
-                "toggle_scopes": "Toggled video scopes",
-                "toggle_log_mode": "Switched grading mode",
-                "bypass_grades": "Toggled grade bypass",
-            }
-            status = _StatusBubble(action_names.get(action_id, f"Done: {action_id}"))
+            status = _StatusBubble(_ACTION_NAMES.get(action_id, f"Done: {action_id}"))
             self.msg_layout.insertWidget(self.msg_layout.count() - 1, status,
                                          alignment=Qt.AlignmentFlag.AlignLeft)
             self._scroll_to_bottom()
@@ -368,12 +482,11 @@ class AdvisorView(QWidget):
             logger.warning("Action %s failed: %s", action_id, e)
 
     def _on_error(self, msg: str):
-        if self._current_bubble:
-            self._current_bubble.setText(f"Error: {msg}")
-            self._current_bubble.setStyleSheet(
-                "background: #7f1d1d; color: #fca5a5; border-radius: 10px; "
-                "font-size: 13px; padding: 8px 12px;"
+        if self._current_row:
+            self._current_row.bubble.setStyleSheet(
+                _ChatBubble._BUBBLE_BASE % ("#7f1d1d", "#fca5a5")
             )
+            self._current_row.bubble.set_markdown_text_immediate(f"Error: {msg}")
         self._enable_input()
 
     def _enable_input(self):

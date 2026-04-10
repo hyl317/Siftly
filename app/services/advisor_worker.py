@@ -64,13 +64,14 @@ def _build_rag_context(user_text: str) -> tuple[str, list[dict]]:
             # Include images only for top 2 results, max 2 images each
             if i < 2:
                 for img_path in r.get("images", [])[:2]:
-                    b64 = image_to_base64(img_path)
-                    if b64:
+                    result = image_to_base64(img_path)
+                    if result:
+                        b64, media_type = result
                         image_blocks.append({
                             "type": "image",
                             "source": {
                                 "type": "base64",
-                                "media_type": "image/jpeg",
+                                "media_type": media_type,
                                 "data": b64,
                             },
                         })

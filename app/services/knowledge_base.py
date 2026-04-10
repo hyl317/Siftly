@@ -259,13 +259,40 @@ def _get_chunk_images(chunk: dict) -> list[str]:
     return images
 
 
-def image_to_base64(path: str) -> str | None:
-    """Load an image file as base64 for the Claude API."""
+def image_to_base64(path: str) -> tuple[str, str] | None:
+    """Load an image file as base64 for the Claude API.
+
+    Standard JPEGs and PNGs are passed through as-is.  Other formats
+    (e.g. JPEG 2000 with a .jpg extension from PDF extraction) are
+    re-encoded to PNG so the declared media type matches the bytes.
+
+    Returns (base64_data, media_type) or None.
+    """
+    import io
+    from PIL import Image
+
+    _PASSTHROUGH = {
+        "JPEG": "image/jpeg",
+        "PNG": "image/png",
+    }
+
     p = Path(path)
     if not p.is_file():
         return None
-    data = p.read_bytes()
-    return base64.standard_b64encode(data).decode("ascii")
+    try:
+        img = Image.open(p)
+        media_type = _PASSTHROUGH.get(img.format)
+        if media_type:
+            b64 = base64.standard_b64encode(p.read_bytes()).decode("ascii")
+            return b64, media_type
+        # Non-standard format — re-encode as PNG
+        img = img.convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        b64 = base64.standard_b64encode(buf.getvalue()).decode("ascii")
+        return b64, "image/png"
+    except Exception:
+        return None
 
 
 # ── Status ───────────────────────────────────────────────────────────
