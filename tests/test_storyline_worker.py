@@ -59,6 +59,20 @@ class TestBuildOrderingPrompt:
         prompt = _build_ordering_prompt(clips, descriptions)
         assert "(no description)" in prompt
 
+    def test_shot_time_included(self):
+        clips = [{"title": "X", "start": 0, "end": 5,
+                  "shot_time": "2024-06-15 14:32:01"}]
+        descriptions = {0: "desc"}
+        prompt = _build_ordering_prompt(clips, descriptions)
+        assert "2024-06-15 14:32:01" in prompt
+        assert "Shot time:" in prompt
+
+    def test_shot_time_omitted_when_empty(self):
+        clips = [{"title": "X", "start": 0, "end": 5, "shot_time": ""}]
+        descriptions = {0: "desc"}
+        prompt = _build_ordering_prompt(clips, descriptions)
+        assert "Shot time:" not in prompt
+
 
 # ── _parse_ordering_response ────────────────────────────────────
 

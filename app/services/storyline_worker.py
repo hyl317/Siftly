@@ -21,6 +21,28 @@ logger = logging.getLogger(__name__)
 MAX_FRAMES_PER_CLIP = 20
 
 
+def _probe_creation_time(file_path: str) -> str:
+    """Extract the recording timestamp from a video file via ffprobe.
+
+    Returns a human-readable datetime string, or "" if unavailable.
+    """
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-print_format", "json",
+             "-show_entries", "format_tags=creation_time",
+             file_path],
+            capture_output=True, text=True, timeout=10,
+        )
+        data = json.loads(result.stdout)
+        ct = data.get("format", {}).get("tags", {}).get("creation_time", "")
+        if ct:
+            # Typically "2024-06-15T14:32:01.000000Z" — trim microseconds + Z
+            return ct.replace("T", " ").split(".")[0].rstrip("Z")
+    except Exception:
+        pass
+    return ""
+
+
 def _extract_frames_1fps(file_path: str, start_sec: float,
                          duration_sec: float) -> list[bytes]:
     """Extract one JPEG frame per second from a video clip.
@@ -60,6 +82,7 @@ def _build_ordering_prompt(clips: list[dict],
         title = clip.get("title", "") or clip.get("clip_name", "") or f"Clip {i}"
         category = clip.get("category", "")
         desc = descriptions.get(i, "(no description)")
+        shot_time = clip.get("shot_time", "")
         duration = clip.get("end", 0) - clip.get("start", 0)
         if duration <= 0:
             duration = clip.get("duration_frames", 0) / clip.get("fps", 25)
@@ -67,6 +90,8 @@ def _build_ordering_prompt(clips: list[dict],
         parts = [f"Clip {i}: \"{title}\""]
         if category:
             parts.append(f"  Category: {category}")
+        if shot_time:
+            parts.append(f"  Shot time: {shot_time}")
         parts.append(f"  Duration: {duration:.1f}s")
         parts.append(f"  Content: {desc}")
         clip_lines.append("\n".join(parts))
@@ -81,6 +106,7 @@ Consider:
 - Build tension or interest progressively
 - End with a strong closing moment or resolution
 - Maintain visual and thematic continuity between adjacent clips
+- Use the shot timestamps as a reference for chronological order when it helps the narrative, but don't feel bound by it — a good story sometimes breaks chronology
 
 {clips_text}
 
@@ -150,11 +176,18 @@ class StorylineWorker(QThread):
 
     def _run_highlights(self):
         from app.services.api_client import get_client
+        from app import video_map
 
         clips = self._highlights
         if len(clips) <= 1:
             self.finished.emit(clips)
             return
+
+        # Enrich clips with shot timestamps
+        for clip in clips:
+            local_path = video_map.get_path(clip.get("video_id", ""))
+            if local_path:
+                clip["shot_time"] = _probe_creation_time(local_path)
 
         client = get_client()
         descriptions: dict[int, str] = {}
@@ -187,6 +220,12 @@ class StorylineWorker(QThread):
         if len(clips) <= 1:
             self.finished.emit(clips)
             return
+
+        # Enrich clips with shot timestamps
+        for clip in clips:
+            file_path = clip.get("file_path", "")
+            if file_path:
+                clip["shot_time"] = _probe_creation_time(file_path)
 
         from anthropic import Anthropic
         vision_client = Anthropic()
